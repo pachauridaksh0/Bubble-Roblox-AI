@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { LeftSidebar } from '../layout/LeftSidebar';
 import { ChatView } from '../chat/ChatView';
@@ -265,7 +266,7 @@ export const AdminPage: React.FC = () => {
         isOpen={isNewProjectModalOpen}
         onClose={() => setNewProjectModalOpen(false)}
         onCreateProject={handleCreateProject}
-        isAdmin={true}
+        isAdmin={isAdmin}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import { ProjectPlatform } from '../../types';
@@ -68,7 +68,25 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClos
 
   const isWebAppProviderLinked = providers.includes('google') || providers.includes('email');
   
-  const canCreate = projectName.trim() && !isCreating && (isAdmin || isWebAppProviderLinked);
+  const canCreate = useMemo(() => {
+    if (!projectName.trim() || isCreating) {
+      return false;
+    }
+    // Admin can create any project.
+    if (isAdmin) {
+      return true;
+    }
+    // Any user can create a Roblox Studio project.
+    if (platform === 'Roblox Studio') {
+      return true;
+    }
+    // Only users with linked providers can create a Web App project.
+    if (platform === 'Web App') {
+      return isWebAppProviderLinked;
+    }
+    // Default to false if something is wrong.
+    return false;
+  }, [projectName, isCreating, isAdmin, platform, isWebAppProviderLinked]);
 
 
   return (

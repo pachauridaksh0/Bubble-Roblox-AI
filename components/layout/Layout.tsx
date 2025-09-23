@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { LeftSidebar } from './LeftSidebar';
 import { ChatView } from '../chat/ChatView';
@@ -292,6 +293,7 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
         isOpen={isNewProjectModalOpen}
         onClose={() => setNewProjectModalOpen(false)}
         onCreateProject={handleCreateProject}
+        isAdmin={isAdmin}
       />
       <ProjectSettingsModal
         isOpen={isProjectSettingsModalOpen}
