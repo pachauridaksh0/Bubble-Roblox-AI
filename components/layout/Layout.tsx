@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { LeftSidebar } from './LeftSidebar';
 import { ChatView } from '../chat/ChatView';
@@ -200,9 +201,9 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
                       project={activeProject} 
                       chat={activeChat}
                       geminiApiKey={geminiApiKey}
-                      initialMessages={messages}
+                      messages={messages}
                       isLoadingHistory={isLoadingMessages}
-                      onMessagesUpdate={setMessages}
+                      setMessages={setMessages}
                       onChatUpdate={handleUpdateChat}
                       searchQuery={searchQuery}
                       onSearchResultsChange={setSearchResultIndices}

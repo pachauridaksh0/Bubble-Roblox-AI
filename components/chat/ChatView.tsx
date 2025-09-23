@@ -1,6 +1,7 @@
 
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Message, Task, Project, Chat, ChatMode } from '../../types';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -17,9 +18,9 @@ interface ChatViewProps {
   project: Project;
   chat: Chat;
   geminiApiKey: string;
-  initialMessages: Message[];
+  messages: Message[];
   isLoadingHistory: boolean;
-  onMessagesUpdate: (messages: Message[]) => void;
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   onChatUpdate: (chatId: string, updates: Partial<Chat>) => void;
   searchQuery: string;
   onSearchResultsChange: (indices: number[]) => void;
@@ -31,9 +32,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
     project, 
     chat,
     geminiApiKey,
-    initialMessages,
+    messages,
     isLoadingHistory,
-    onMessagesUpdate,
+    setMessages,
     onChatUpdate,
     searchQuery,
     onSearchResultsChange,
@@ -41,15 +42,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
     isAdmin,
 }) => {
   const { user, supabase, profile } = useAuth();
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [isLoading, setIsLoading] = useState(false);
   const [isPlanExecuting, setIsPlanExecuting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  useEffect(() => {
-    // When a new chat is opened (initialMessages are empty), show the greeter message.
-    if (initialMessages.length === 0 && !isLoadingHistory && profile) {
+  const displayMessages = useMemo(() => {
+    if (messages.length === 0 && !isLoadingHistory && profile) {
       const greeterMessage: Message = {
         id: INITIAL_GREETING_MSG_ID,
         project_id: project.id,
@@ -58,16 +57,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
         text: `Hey ${profile.roblox_username.split(' ')[0]}! 👋 What awesome game should we start building today? Just a sentence or two is perfect.`,
         created_at: new Date().toISOString(),
       };
-      setMessages([greeterMessage]);
-    } else {
-      setMessages(initialMessages);
+      return [greeterMessage];
     }
-  }, [initialMessages, isLoadingHistory, chat.id, profile, project.id]);
-
-
-  useEffect(() => {
-    onMessagesUpdate(messages);
-  }, [messages, onMessagesUpdate]);
+    return messages;
+  }, [messages, isLoadingHistory, profile, project.id, chat.id]);
 
   const scrollToBottom = useCallback(() => {
     // Use instant scrolling to prevent visual glitches with rapid updates or animations.
@@ -104,9 +97,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
     if (!supabase) return;
 
     const messageIndex = messages.findIndex(m => m.id === messageId);
-    const planMessage = messages[messageIndex];
+    if (messageIndex === -1) return;
 
-    if (messageIndex === -1 || !planMessage?.plan) return;
+    const planMessage = messages[messageIndex];
+    if (!planMessage?.plan) return;
 
     setIsPlanExecuting(true);
     messageRefs.current[messageIndex]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -298,7 +292,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
       </div>
       <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
         <AnimatePresence initial={false}>
-          {messages.map((msg, index) => (
+          {displayMessages.map((msg, index) => (
             <div key={msg.id} ref={el => { messageRefs.current[index] = el; }}>
                 <ChatMessage 
                     message={msg} 

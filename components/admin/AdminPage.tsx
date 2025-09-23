@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { LeftSidebar } from '../layout/LeftSidebar';
 import { ChatView } from '../chat/ChatView';
@@ -213,9 +214,11 @@ export const AdminPage: React.FC = () => {
                 project={activeProject}
                 chat={activeChat}
                 geminiApiKey={geminiApiKey}
-                initialMessages={messages}
+                // FIX: Changed `initialMessages` to `messages` to match ChatViewProps.
+                messages={messages}
                 isLoadingHistory={isLoadingMessages}
-                onMessagesUpdate={setMessages}
+                // FIX: Changed `onMessagesUpdate` to `setMessages` to match ChatViewProps.
+                setMessages={setMessages}
                 onChatUpdate={() => {}} // Admin view is read-only for chat properties
                 searchQuery=""
                 onSearchResultsChange={() => {}}
