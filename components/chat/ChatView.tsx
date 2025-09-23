@@ -1,12 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Message, Task, Project, Chat, ChatMode } from '../../types';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AnimatePresence } from 'framer-motion';
-import { generatePlan, generateCodeForTask, generateClarifyingQuestions, generateChatTitle, generateThinkerResponse } from '../../services/geminiService';
+import { generateChatTitle } from '../../services/geminiService';
 import { useAuth } from '../../contexts/AuthContext';
 import { addMessage, updateMessagePlan, updateMessageClarification } from '../../services/databaseService';
-import { BoltIcon, CpuChipIcon } from '@heroicons/react/24/solid';
+import { runAgent } from '../../agents';
+import { generateCodeForTask } from '../../agents/build/codeGenerator';
+import { NEW_CHAT_NAME, INITIAL_GREETING_MSG_ID } from '../../constants';
 
 
 interface ChatViewProps {
@@ -47,7 +51,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     // When a new chat is opened (initialMessages are empty), show the greeter message.
     if (initialMessages.length === 0 && !isLoadingHistory && profile) {
       const greeterMessage: Message = {
-        id: 'initial-greeter-message',
+        id: INITIAL_GREETING_MSG_ID,
         project_id: project.id,
         chat_id: chat.id,
         sender: 'ai',
@@ -65,16 +69,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
     onMessagesUpdate(messages);
   }, [messages, onMessagesUpdate]);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     // Use instant scrolling to prevent visual glitches with rapid updates or animations.
     messagesEndRef.current?.scrollIntoView();
-  };
+  }, []);
   
   useEffect(() => {
     if (searchQuery.trim() === '' && !isPlanExecuting) {
         scrollToBottom();
     }
-  }, [messages, searchQuery, isPlanExecuting]);
+  }, [messages, searchQuery, isPlanExecuting, scrollToBottom]);
 
   useEffect(() => {
     if (searchQuery.trim() === '') {
@@ -97,114 +101,62 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [currentSearchResultMessageIndex]);
   
   const handleExecutePlan = async (messageId: string) => {
+    if (!supabase) return;
+
     const messageIndex = messages.findIndex(m => m.id === messageId);
-    if (messageIndex === -1 || !messages[messageIndex].plan || !supabase) return;
+    const planMessage = messages[messageIndex];
+
+    if (messageIndex === -1 || !planMessage?.plan) return;
 
     setIsPlanExecuting(true);
     messageRefs.current[messageIndex]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-    let plan = { ...messages[messageIndex].plan! };
+    // Deep clone the plan to avoid direct state mutation.
+    const planCopy = JSON.parse(JSON.stringify(planMessage.plan));
 
-    for (let i = 0; i < plan.tasks.length; i++) {
-        plan.tasks[i].status = 'in-progress';
-        const newMessages = messages.map(m => m.id === messageId ? { ...m, plan: { ...plan } } : m);
-        setMessages(newMessages);
-        await updateMessagePlan(supabase, messageId, plan);
+    for (let i = 0; i < planCopy.tasks.length; i++) {
+        // Update UI to show 'in-progress'
+        planCopy.tasks[i].status = 'in-progress';
+        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, plan: JSON.parse(JSON.stringify(planCopy)) } : m));
         
+        // Artificial delay for UX
         await new Promise(res => setTimeout(res, 500));
 
-        const taskResult = await generateCodeForTask(plan.tasks[i].text, project.platform, geminiApiKey, project.default_model);
+        // Generate code for the task
+        const taskResult = await generateCodeForTask(planCopy.tasks[i].text, project.platform, geminiApiKey, project.default_model);
         
-        const task = plan.tasks[i];
+        // Update plan with result
+        const task = planCopy.tasks[i];
         task.status = 'complete';
         task.code = taskResult.code;
         task.explanation = taskResult.explanation;
-        const finalMessages = messages.map(m => m.id === messageId ? { ...m, plan: { ...plan } } : m);
-        setMessages(finalMessages);
-        await updateMessagePlan(supabase, messageId, plan);
+
+        // Update UI with completed task and save this task's progress to DB
+        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, plan: JSON.parse(JSON.stringify(planCopy)) } : m));
+        try {
+             await updateMessagePlan(supabase, messageId, planCopy);
+        } catch (dbError) {
+             console.error(`Failed to update plan progress to DB for task ${i}:`, dbError);
+             // Optionally show an error to the user, but for now we continue execution
+        }
     }
     
-    plan.isComplete = true;
-    const finalMessages = messages.map(m => m.id === messageId ? { ...m, plan: { ...plan } } : m);
-    setMessages(finalMessages);
-    await updateMessagePlan(supabase, messageId, plan);
+    // Finalize plan
+    planCopy.isComplete = true;
+    setMessages(prev => prev.map(m => m.id === messageId ? { ...m, plan: JSON.parse(JSON.stringify(planCopy)) } : m));
+    try {
+        await updateMessagePlan(supabase, messageId, planCopy);
+    } catch (dbError) {
+        console.error('Failed to save final completed plan to DB:', dbError);
+    }
+
     setIsPlanExecuting(false);
   };
-
-  const handleGeneratePlan = async (prompt: string, answers?: string[]) => {
-      if (!supabase || !user) return;
-      let fullPrompt = prompt;
-      if (answers) {
-          fullPrompt += "\n\nHere are my answers to your clarifying questions:\n" + answers.map((a, i) => `${i+1}. ${a}`).join("\n");
-      }
-
-      try {
-        const planResponse = await generatePlan(fullPrompt, geminiApiKey, project.default_model);
-        const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
-
-        const aiPlanMessage: Omit<Message, 'id' | 'created_at'> = {
-            project_id: project.id,
-            chat_id: chat.id,
-            sender: 'ai',
-            text: planResponse.introduction,
-            plan: {
-                title: planResponse.title,
-                features: planResponse.features,
-                tasks: planTasks,
-                isComplete: false,
-            }
-        };
-        const savedMessage = await addMessage(supabase, aiPlanMessage);
-        setMessages(prev => [...prev, savedMessage]);
-
-    } catch(e) {
-        const errorText = e instanceof Error ? e.message : "An error occurred. Please check your API key or the console for more details.";
-        const errorMessage: Omit<Message, 'id' | 'created_at'> = {
-            project_id: project.id,
-            chat_id: chat.id,
-            text: errorText,
-            sender: 'ai',
-        };
-        const savedMessage = await addMessage(supabase, errorMessage);
-        setMessages(prev => [...prev, savedMessage]);
-    } finally {
-        setIsLoading(false);
-    }
-  }
   
-  const handleThinkerMode = async (prompt: string) => {
-    if (!supabase) return;
-    try {
-        const { standing, opposing, final } = await generateThinkerResponse(prompt, geminiApiKey, project.default_model);
-        
-        const aiMessage: Omit<Message, 'id' | 'created_at'> = {
-            project_id: project.id,
-            chat_id: chat.id,
-            sender: 'ai',
-            text: final, // The synthesized response is the main text
-            standing_response: standing,
-            opposing_response: opposing,
-        };
-        const savedMessage = await addMessage(supabase, aiMessage);
-        setMessages(prev => [...prev, savedMessage]);
-
-    } catch (e) {
-        const errorText = e instanceof Error ? e.message : "An error occurred. Please check your API key or the console for more details.";
-        const errorMessage: Omit<Message, 'id' | 'created_at'> = {
-            project_id: project.id,
-            chat_id: chat.id,
-            text: errorText,
-            sender: 'ai',
-        };
-        const savedMessage = await addMessage(supabase, errorMessage);
-        setMessages(prev => [...prev, savedMessage]);
-    }
-}
-
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || !supabase || !user) return;
     
-    const isNewChat = chat.name === "New Chat";
+    const isNewChat = chat.name === NEW_CHAT_NAME;
 
     const userMessage: Omit<Message, 'id' | 'created_at'> = {
       project_id: project.id,
@@ -214,10 +166,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
       sender: 'user',
     };
     
-    // Remove the greeter message if it exists and add user message optimistically
-    const newMessages = messages.filter(m => m.id !== 'initial-greeter-message');
     const savedUserMessage = await addMessage(supabase, userMessage);
-    setMessages([...newMessages, savedUserMessage]);
+    setMessages(prev => [
+        ...prev.filter(m => m.id !== INITIAL_GREETING_MSG_ID), 
+        savedUserMessage
+    ]);
     setIsLoading(true);
 
     // AI Naming Logic
@@ -232,39 +185,25 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
 
     try {
-        switch (chat.mode) {
-            case 'thinker':
-                await handleThinkerMode(text);
-                break;
-            case 'build': // For now, build mode will generate a plan first.
-                await handleGeneratePlan(text);
-                break;
-            case 'plan':
-            case 'chat':
-            case 'super_agent': // Super agent will start with clarification.
-            default:
-                 const questionResponse = await generateClarifyingQuestions(text, geminiApiKey, project.default_model);
-        
-                if (questionResponse.questions && questionResponse.questions.length > 0) {
-                    const clarificationMessage: Omit<Message, 'id' | 'created_at'> = {
-                        project_id: project.id,
-                        chat_id: chat.id,
-                        sender: 'ai',
-                        text: "Before I create a plan, I have a few questions to make sure I build exactly what you need:",
-                        clarification: {
-                            prompt: text,
-                            questions: questionResponse.questions,
-                        }
-                    }
-                    const savedAIMessage = await addMessage(supabase, clarificationMessage);
-                    setMessages(prev => [...prev, savedAIMessage]);
-                } else {
-                    await handleGeneratePlan(text);
-                }
-                break;
+        const agentOutput = await runAgent({
+            prompt: text,
+            apiKey: geminiApiKey,
+            model: project.default_model,
+            project,
+            chat,
+            user,
+            supabase,
+        });
+
+        // Save AI responses and update UI
+        for (const messageContent of agentOutput) {
+            const savedAiMessage = await addMessage(supabase, messageContent);
+            setMessages(prev => [...prev, savedAiMessage]);
         }
+
     } catch (e) {
-        const errorText = e instanceof Error ? e.message : "An error occurred. Please check your API key or the console for more details.";
+        console.error("Agent execution error:", e);
+        const errorText = "Sorry, I ran into an issue while processing your request. Please try again, and make sure your API key is valid.";
         const errorMessage: Omit<Message, 'id' | 'created_at'> = {
             project_id: project.id,
             chat_id: chat.id,
@@ -280,7 +219,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const handleClarificationSubmit = async (messageId: string, answers: string[]) => {
       const messageIndex = messages.findIndex(m => m.id === messageId);
-      if (messageIndex === -1 || !messages[messageIndex].clarification || !supabase) return;
+      if (messageIndex === -1 || !messages[messageIndex].clarification || !supabase || !user) return;
       
       const originalPrompt = messages[messageIndex].clarification!.prompt;
       
@@ -291,7 +230,37 @@ export const ChatView: React.FC<ChatViewProps> = ({
       await updateMessageClarification(supabase, messageId, updatedClarification);
 
       setIsLoading(true);
-      await handleGeneratePlan(originalPrompt, answers);
+
+      try {
+        const agentOutput = await runAgent({
+            prompt: originalPrompt,
+            answers: answers,
+            apiKey: geminiApiKey,
+            model: project.default_model,
+            project,
+            chat,
+            user,
+            supabase,
+        });
+
+        for (const messageContent of agentOutput) {
+            const savedAiMessage = await addMessage(supabase, messageContent);
+            setMessages(prev => [...prev, savedAiMessage]);
+        }
+      } catch (e) {
+         console.error("Agent execution error after clarification:", e);
+         const errorText = "Sorry, I ran into an issue while creating a plan. Please check your API key and try again.";
+         const errorMessage: Omit<Message, 'id' | 'created_at'> = {
+             project_id: project.id,
+             chat_id: chat.id,
+             text: errorText,
+             sender: 'ai',
+         };
+         const savedMessage = await addMessage(supabase, errorMessage);
+         setMessages(prev => [...prev, savedMessage]);
+      } finally {
+        setIsLoading(false);
+      }
   }
 
   if (isLoadingHistory) {

@@ -16,6 +16,7 @@ export interface Plan {
     title: string;
     features: string[];
     tasks: Task[];
+    mermaidGraph?: string;
     isComplete: boolean;
 }
 
@@ -86,4 +87,5 @@ export interface Profile {
     role?: 'admin' | 'user';
     status?: 'active' | 'banned';
     ban_reason?: string | null;
+    gemini_api_key?: string | null;
 }

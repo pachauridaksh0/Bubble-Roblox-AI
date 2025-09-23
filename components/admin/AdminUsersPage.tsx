@@ -13,13 +13,14 @@ import {
     ShieldExclamationIcon,
     ArrowUturnLeftIcon,
     MagnifyingGlassIcon,
-    ExclamationTriangleIcon
+    ExclamationTriangleIcon,
+    KeyIcon
 } from '@heroicons/react/24/outline';
 
 
 const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
 
-type ActionType = 'ban' | 'unban' | 'admin' | 'unadmin';
+type ActionType = 'ban' | 'unban' | 'admin' | 'unadmin' | 'view_key';
 
 const UserCard: React.FC<{ profile: Profile; onRequestAction: (actionType: ActionType, profile: Profile) => void }> = ({ profile, onRequestAction }) => {
     const { impersonateUser } = useAuth();
@@ -71,25 +72,36 @@ const UserCard: React.FC<{ profile: Profile; onRequestAction: (actionType: Actio
                 </div>
             </div>
 
-            <div className="mt-auto grid grid-cols-3 gap-2 text-sm">
+            <div className="mt-auto grid grid-cols-4 gap-2 text-xs font-semibold">
                 <button
                     onClick={() => impersonateUser(profile)}
-                    className="col-span-1 flex items-center justify-center gap-2 px-3 py-2 bg-white/5 text-gray-300 rounded-md hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Impersonate User"
+                    className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 text-gray-300 rounded-md hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={isBanned}
                 >
                     <ArrowRightOnRectangleIcon className="w-4 h-4" />
-                    <span>Impersonate</span>
+                    <span>View As</span>
+                </button>
+                 <button
+                    onClick={() => onRequestAction('view_key', profile)}
+                    title="View API Key"
+                    className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 text-gray-300 rounded-md hover:bg-white/10 hover:text-white transition-colors"
+                >
+                    <KeyIcon className="w-4 h-4" />
+                    <span>Key</span>
                 </button>
                 <button
                     onClick={handleToggleBan}
-                    className={`col-span-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md transition-colors ${isBanned ? 'bg-success/10 text-success hover:bg-success/20' : 'bg-error/10 text-error hover:bg-error/20'}`}
+                    title={isBanned ? 'Unban User' : 'Ban User'}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-md transition-colors ${isBanned ? 'bg-success/10 text-success hover:bg-success/20' : 'bg-error/10 text-error hover:bg-error/20'}`}
                 >
                     {isBanned ? <ArrowUturnLeftIcon className="w-4 h-4"/> : <NoSymbolIcon className="w-4 h-4"/>}
                     <span>{isBanned ? 'Unban' : 'Ban'}</span>
                 </button>
                  <button
                     onClick={handleToggleAdmin}
-                    className={`col-span-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isAdmin ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20' : 'bg-primary-start/10 text-primary-start hover:bg-primary-start/20'}`}
+                    title={isAdmin ? 'Revoke Admin' : 'Make Admin'}
+                    className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isAdmin ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20' : 'bg-primary-start/10 text-primary-start hover:bg-primary-start/20'}`}
                     disabled={isBanned}
                 >
                     {isAdmin ? <ShieldExclamationIcon className="w-4 h-4"/> : <ShieldCheckIcon className="w-4 h-4"/>}
@@ -182,12 +194,31 @@ export const AdminUsersPage: React.FC = () => {
                     confirmClassName: 'bg-amber-600 text-white hover:bg-amber-700'
                 });
                 break;
+            case 'view_key':
+                setModalConfig({
+                    title: `${profile.roblox_username}'s API Key`,
+                    message: profile.gemini_api_key || 'No key has been set for this user.',
+                    confirmText: 'Copy to Clipboard',
+                    confirmClassName: 'bg-indigo-600 text-white hover:bg-indigo-700',
+                    needsReasonInput: false,
+                });
+                break;
         }
         setIsModalOpen(true);
     };
 
     const handleConfirmAction = async (reason?: string) => {
         if (!selectedProfile || !modalConfig) return;
+
+        if (modalConfig.title.includes('API Key')) {
+            if (selectedProfile.gemini_api_key) {
+                navigator.clipboard.writeText(selectedProfile.gemini_api_key);
+            }
+            setIsModalOpen(false);
+            setSelectedProfile(null);
+            setModalConfig(null);
+            return;
+        }
 
         let updates: Partial<Profile> = {};
         if (modalConfig.title.includes('Ban')) {

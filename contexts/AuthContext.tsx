@@ -1,9 +1,7 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import type { Session, User, SupabaseClient, Provider } from '@supabase/supabase-js';
 import { Profile } from '../types';
-import { GEMINI_API_KEY_KEY } from '../constants';
 import { supabase } from '../supabaseClient'; // Import the centralized client
-import { useLocalStorage } from '../hooks/useLocalStorage';
 import { createProfile as createProfileInDb, updateProfile } from '../services/databaseService';
 
 // --- Development Flag ---
@@ -27,8 +25,9 @@ interface AuthContextType {
     signInWithPassword: (email: string, pass: string) => Promise<void>;
     signUpWithEmail: (email: string, pass: string) => Promise<void>;
     signOut: () => Promise<void>;
-    // FIX: Correctly type `setGeminiApiKey` to match the hook's return type.
-    setGeminiApiKey: React.Dispatch<React.SetStateAction<string | null>>;
+    saveGeminiApiKey: (key: string) => Promise<void>;
+    // FIX: Expose setGeminiApiKey for admin session key setup.
+    setGeminiApiKey: (key: string | null) => void;
     createProfile: (displayName: string) => Promise<void>;
     updateUserProfile: (updates: Partial<Profile>) => Promise<void>;
     loginAsAdmin: () => void;
@@ -46,8 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [profileError, setProfileError] = useState<string | null>(null);
     const [providers, setProviders] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
-    // FIX: Removed generic type argument from useLocalStorage call, as it is not a generic hook.
-    const [geminiApiKey, setGeminiApiKey] = useLocalStorage(GEMINI_API_KEY_KEY, null);
+    const [geminiApiKey, setGeminiApiKey] = useState<string | null>(null);
     const [isAdmin, setIsAdmin] = useState(false);
     const [originalAdminState, setOriginalAdminState] = useState<{ session: Session; user: User; profile: Profile } | null>(null);
 
@@ -100,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         throw error;
                     }
                     setProfile(profileData);
+                    setGeminiApiKey(profileData?.gemini_api_key || null);
                     setProfileError(null);
                 } catch (error: any) {
                     console.error("Error fetching profile:", error);
@@ -112,6 +111,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             } else {
                 setProfile(null);
+                setGeminiApiKey(null);
             }
             // Crucially, set loading to false only after all async operations are done.
             setLoading(false);
@@ -168,10 +168,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setProfile(null);
         setProviders([]);
-        // Do NOT clear the Gemini API key on sign out.
-        // setGeminiApiKey(null); 
+        setGeminiApiKey(null);
         if (isAdmin) {
           logoutAdmin();
+        }
+    };
+
+    const saveGeminiApiKey = async (key: string) => {
+        if (!user) throw new Error("User not authenticated.");
+        try {
+            await updateProfile(supabase, user.id, { gemini_api_key: key });
+            setGeminiApiKey(key);
+        } catch (error) {
+            console.error("Failed to save API key:", error);
+            throw error;
         }
     };
     
@@ -220,6 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(impersonatedSession);
         setUser(impersonatedUser);
         setProfile(profileToImpersonate);
+        setGeminiApiKey(profileToImpersonate.gemini_api_key || null);
         setIsAdmin(false);
     };
 
@@ -228,6 +239,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(originalAdminState.session);
         setUser(originalAdminState.user);
         setProfile(originalAdminState.profile);
+        setGeminiApiKey(originalAdminState.profile.gemini_api_key || null);
         setOriginalAdminState(null);
         setIsAdmin(true);
     };
@@ -248,6 +260,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithPassword,
         signUpWithEmail,
         signOut,
+        saveGeminiApiKey,
         setGeminiApiKey,
         createProfile,
         updateUserProfile,

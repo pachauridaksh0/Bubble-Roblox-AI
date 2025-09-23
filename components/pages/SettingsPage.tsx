@@ -3,13 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
     ArrowLeftIcon, 
-    UserCircleIcon, 
     KeyIcon, 
     LinkIcon, 
     ArrowLeftOnRectangleIcon, 
     CheckCircleIcon 
 } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
+import { validateApiKey } from '../../services/geminiService';
 
 const GoogleIcon = () => (
     <svg className="w-6 h-6" viewBox="0 0 48 48">
@@ -40,10 +40,16 @@ const Section: React.FC<{title: string; description: string; children: React.Rea
 );
 
 export const SettingsPage: React.FC<{onBack: () => void}> = ({ onBack }) => {
-    const { profile, providers, updateUserProfile, geminiApiKey, signOut, signInWithGoogle, signInWithRoblox } = useAuth();
+    const { profile, providers, updateUserProfile, geminiApiKey, signOut, saveGeminiApiKey, signInWithGoogle, signInWithRoblox } = useAuth();
     const [displayName, setDisplayName] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [saveSuccess, setSaveSuccess] = useState(false);
+
+    const [isKeyVisible, setIsKeyVisible] = useState(false);
+    const [keyToUpdate, setKeyToUpdate] = useState('');
+    const [isUpdatingKey, setIsUpdatingKey] = useState(false);
+    const [keyUpdateSuccess, setKeyUpdateSuccess] = useState(false);
+    const [keyUpdateError, setKeyUpdateError] = useState<string | null>(null);
 
     useEffect(() => {
         if (profile) {
@@ -65,8 +71,38 @@ export const SettingsPage: React.FC<{onBack: () => void}> = ({ onBack }) => {
         }
     };
     
-    const maskedApiKey = geminiApiKey ? `****${geminiApiKey.slice(-4)}` : 'Not Set';
+    const handleUpdateKey = async () => {
+        if (!keyToUpdate.trim() || isUpdatingKey) return;
+        setIsUpdatingKey(true);
+        setKeyUpdateError(null);
+        setKeyUpdateSuccess(false);
+        try {
+            const isValid = await validateApiKey(keyToUpdate);
+            if (!isValid) {
+                throw new Error("The new API key appears to be invalid.");
+            }
+            await saveGeminiApiKey(keyToUpdate);
+            setKeyUpdateSuccess(true);
+            setKeyToUpdate('');
+            setTimeout(() => setKeyUpdateSuccess(false), 2000);
+        } catch (error) {
+            // FIX: Improved error handling to correctly display messages from Supabase errors.
+            const errorMessage = (error && typeof error === 'object' && 'message' in error)
+                ? (error as { message: string }).message
+                : "An unknown error occurred.";
+            setKeyUpdateError(errorMessage);
+        } finally {
+            setIsUpdatingKey(false);
+        }
+    };
+    
+    const copyApiKey = () => {
+        if (geminiApiKey) {
+            navigator.clipboard.writeText(geminiApiKey);
+        }
+    };
 
+    const maskedApiKey = geminiApiKey ? (isKeyVisible ? geminiApiKey : `sk-....${geminiApiKey.slice(-4)}`) : 'Not Set';
     const providerDetails = [
         { name: 'google', Icon: GoogleIcon, isLinked: providers.includes('google'), action: signInWithGoogle, label: 'Google' },
         { name: 'roblox', Icon: RobloxLogo, isLinked: providers.includes('roblox'), action: signInWithRoblox, label: 'Roblox' },
@@ -138,17 +174,48 @@ export const SettingsPage: React.FC<{onBack: () => void}> = ({ onBack }) => {
                 </Section>
                 
                  <Section title="API Keys" description="Manage your API keys for third-party services.">
-                    <div className="flex items-center justify-between p-3 bg-black/20 rounded-md">
-                        <div className="flex items-center gap-4">
-                            <KeyIcon className="w-6 h-6 text-yellow-400"/>
-                            <div>
-                                <p className="font-medium text-white">Google Gemini API Key</p>
-                                <p className="font-mono text-sm text-gray-400">{maskedApiKey}</p>
+                    <div className="p-3 bg-black/20 rounded-md">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <KeyIcon className="w-6 h-6 text-yellow-400"/>
+                                <div>
+                                    <p className="font-medium text-white">Google Gemini API Key</p>
+                                    <p className="font-mono text-sm text-gray-400">{maskedApiKey}</p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => setIsKeyVisible(!isKeyVisible)} className="px-3 py-1.5 text-xs font-semibold bg-white/10 text-white rounded-md hover:bg-white/20">
+                                    {isKeyVisible ? 'Hide' : 'Show'}
+                                </button>
+                                <button onClick={copyApiKey} disabled={!geminiApiKey} className="px-3 py-1.5 text-xs font-semibold bg-white/10 text-white rounded-md hover:bg-white/20 disabled:opacity-50">
+                                    Copy
+                                </button>
                             </div>
                         </div>
-                        <a href="/#" onClick={(e) => { e.preventDefault(); alert('Functionality to change API key is coming soon!'); }} className="px-4 py-1.5 text-sm font-semibold bg-white/10 text-white rounded-md hover:bg-white/20">
-                            Change
-                        </a>
+                        <div className="mt-4 pt-4 border-t border-white/20">
+                            <label className="block text-sm font-medium text-gray-300 mb-2">Update API Key</label>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="password"
+                                    placeholder="Enter new Gemini API key"
+                                    value={keyToUpdate}
+                                    onChange={(e) => { setKeyToUpdate(e.target.value); setKeyUpdateError(null); }}
+                                    className="flex-grow px-3 py-2 bg-white/5 border border-white/20 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-start"
+                                />
+                                <button
+                                    onClick={handleUpdateKey}
+                                    disabled={isUpdatingKey || keyUpdateSuccess || !keyToUpdate.trim()}
+                                    className="self-end px-4 h-[42px] bg-primary-start text-white rounded-md font-semibold text-sm hover:bg-primary-start/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 w-24 flex items-center justify-center"
+                                >
+                                    {isUpdatingKey ? (
+                                         <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                    ) : keyUpdateSuccess ? (
+                                        <CheckCircleIcon className="h-6 w-6 text-white" />
+                                    ) : 'Save'}
+                                </button>
+                            </div>
+                            {keyUpdateError && <p className="text-red-400 text-xs mt-2">{keyUpdateError}</p>}
+                        </div>
                     </div>
                 </Section>
 

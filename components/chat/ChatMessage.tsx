@@ -1,10 +1,60 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Message, Task } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CodeBlock } from '../ui/CodeBlock';
-import { CheckCircleIcon, BuildingStorefrontIcon, PhotoIcon, LightBulbIcon, CodeBracketSquareIcon, EyeIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon, LightBulbIcon, CodeBracketSquareIcon, EyeIcon, ShareIcon, SparklesIcon } from '@heroicons/react/24/solid';
 import { CpuChipIcon, ExclamationTriangleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { ClarificationForm } from './ClarificationForm';
+
+// MermaidDiagram Component
+const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition }) => {
+    const mermaidRef = useRef<HTMLDivElement>(null);
+    const [svgContent, setSvgContent] = useState('');
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const renderMermaid = async () => {
+            if (mermaidRef.current && graphDefinition && (window as any).mermaid) {
+                try {
+                    setError('');
+                    const { mermaidAPI } = (window as any).mermaid;
+                    mermaidAPI.initialize({
+                        startOnLoad: false,
+                        theme: 'dark',
+                        securityLevel: 'loose',
+                        fontFamily: 'Inter, sans-serif',
+                        themeVariables: {
+                            background: '#1e293b', // bg-secondary
+                            primaryColor: '#334155', // bg-tertiary
+                            primaryTextColor: '#ffffff',
+                            lineColor: '#6366f1', // primary-start
+                            textColor: '#d1d5db', // gray-300
+                            nodeBorder: '#8b5cf6', // primary-end
+                        }
+                    });
+                    const { svg } = await mermaidAPI.render(`mermaid-graph-${Date.now()}`, graphDefinition);
+                    setSvgContent(svg);
+                } catch (e) {
+                    console.error("Mermaid rendering error:", e);
+                    setError("Could not render the visual plan. The diagram syntax may be invalid.");
+                    setSvgContent('');
+                }
+            }
+        };
+        renderMermaid();
+    }, [graphDefinition]);
+
+    if (error) {
+        return (
+            <div className="p-4 bg-error/10 text-error/80 text-sm rounded-lg">
+                <p><strong>Visual Plan Error:</strong> {error}</p>
+            </div>
+        );
+    }
+
+    return <div ref={mermaidRef} dangerouslySetInnerHTML={{ __html: svgContent }} className="flex justify-center p-2" />;
+};
+
 
 interface ChatMessageProps {
   message: Message;
@@ -136,6 +186,11 @@ const PlanExecutionRenderer: React.FC<{ plan: Message['plan'] }> = ({ plan }) =>
     if (!plan) return null;
     return (
         <div className="mx-4 mb-4 p-4 rounded-lg bg-black/20 border border-white/10">
+             {plan.mermaidGraph && (
+                <div className="mb-4">
+                     <MermaidDiagram graphDefinition={plan.mermaidGraph} />
+                </div>
+             )}
             <div className="flex items-center mb-4">
                 <CpuChipIcon className="w-6 h-6 text-primary-start mr-3" />
                 <div>
@@ -155,15 +210,22 @@ const PlanExecutionRenderer: React.FC<{ plan: Message['plan'] }> = ({ plan }) =>
 
 const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: string) => void, searchQuery?: string }> = ({ message, onExecutePlan, searchQuery }) => {
     const { plan } = message;
-    const [selectedOption, setSelectedOption] = useState('build');
-
     if (!plan) return null;
 
     const hasStartedExecution = plan.tasks.some(t => t.status !== 'pending');
 
+    if (hasStartedExecution) {
+        return (
+            <>
+                <p className="px-5 py-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+                <PlanExecutionRenderer plan={plan} />
+            </>
+        );
+    }
+    
     return (
         <div className="space-y-4">
-            <p className="px-5 py-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+            <p className="px-5 pt-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
             
             <div className="mx-4 p-4 rounded-lg bg-black/20 border border-white/10">
                 <h4 className="font-semibold text-white mb-2">I'll include the following features:</h4>
@@ -176,43 +238,29 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
                     ))}
                 </ul>
             </div>
-
-            {hasStartedExecution ? (
-                <PlanExecutionRenderer plan={plan} />
-            ) : (
-                <div className="mx-4 mb-4 p-4 rounded-lg bg-black/20 border border-white/10">
-                    <p className="text-gray-300 mb-1">I've created a feature list based on your request.</p>
-                    <h4 className="font-semibold text-white mb-4">How do you want to continue?</h4>
-                    <div className="space-y-3">
-                        <div 
-                            onClick={() => setSelectedOption('build')}
-                            className={`p-3 rounded-lg border-2 transition-colors cursor-pointer flex items-start gap-4 ${selectedOption === 'build' ? 'bg-primary-start/20 border-primary-start' : 'bg-white/5 border-transparent hover:border-white/20'}`}
-                        >
-                            <BuildingStorefrontIcon className="w-6 h-6 text-white mt-1 flex-shrink-0" />
-                            <div>
-                                <h5 className="font-bold text-white">Build the entire app</h5>
-                                <p className="text-sm text-gray-400">Best if you want Agent to build out the full functionality of your app.</p>
-                            </div>
-                        </div>
-                        <div 
-                            onClick={() => setSelectedOption('design')}
-                            className={`p-3 rounded-lg border-2 transition-colors cursor-pointer flex items-start gap-4 ${selectedOption === 'design' ? 'bg-primary-start/20 border-primary-start' : 'bg-white/5 border-transparent hover:border-white/20'}`}
-                        >
-                            <PhotoIcon className="w-6 h-6 text-white mt-1 flex-shrink-0" />
-                            <div>
-                                <h5 className="font-bold text-white">Start with a design</h5>
-                                <p className="text-sm text-gray-400">Best if you want to see a design prototype first, then iterate on visuals or features.</p>
-                            </div>
-                        </div>
-                    </div>
-                    <button
-                        onClick={() => onExecutePlan(message.id)}
-                        className="mt-4 w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-primary-start text-white rounded-lg shadow-lg hover:bg-primary-start/80 transition-all duration-150 ease-in-out transform hover:scale-[1.02] active:scale-95"
-                    >
-                        Start building
-                    </button>
-                </div>
+            
+            {plan.mermaidGraph && (
+                 <div className="mx-4 p-4 rounded-lg bg-black/20 border border-white/10">
+                     <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
+                        <ShareIcon className="w-5 h-5 text-primary-start/80"/>
+                        Project Blueprint
+                    </h4>
+                     <p className="text-sm text-gray-400 mb-2">Here's a visual breakdown of how the components will work together.</p>
+                     <div className="p-2 rounded-lg bg-bg-secondary/70">
+                        <MermaidDiagram graphDefinition={plan.mermaidGraph} />
+                     </div>
+                 </div>
             )}
+            
+            <div className="px-4 pb-3">
+                 <button
+                    onClick={() => onExecutePlan(message.id)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-primary-start text-white rounded-lg shadow-lg hover:bg-primary-start/80 transition-all duration-150 ease-in-out transform hover:scale-[1.02] active:scale-95"
+                >
+                    <SparklesIcon className="w-5 h-5"/>
+                    <span>Start Building</span>
+                </button>
+            </div>
         </div>
     )
 }

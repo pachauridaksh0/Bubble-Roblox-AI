@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
@@ -5,7 +6,7 @@ import { validateApiKey } from '../../services/geminiService';
 import { KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 export const ApiKeySetupPage: React.FC = () => {
-    const { setGeminiApiKey } = useAuth();
+    const { saveGeminiApiKey } = useAuth();
     const [geminiKey, setGeminiKey] = useState('');
     const [isValidating, setIsValidating] = useState(false);
     const [validationError, setValidationError] = useState<string | null>(null);
@@ -17,8 +18,16 @@ export const ApiKeySetupPage: React.FC = () => {
         setValidationError(null);
         const isValid = await validateApiKey(geminiKey);
         if (isValid) {
-            setGeminiApiKey(geminiKey);
-            // On success, AuthContext state changes and App.tsx navigates away.
+            try {
+                await saveGeminiApiKey(geminiKey);
+                // On success, AuthContext state changes and App.tsx navigates away.
+            } catch (error) {
+                // FIX: Display the specific error message from Supabase instead of a generic one.
+                const errorMessage = (error && typeof error === 'object' && 'message' in error)
+                    ? (error as { message: string }).message
+                    : 'Failed to save the API key. Please try again.';
+                setValidationError(errorMessage);
+            }
         } else {
             setValidationError('Invalid API Key. Please check your key and try again.');
         }
@@ -41,7 +50,7 @@ export const ApiKeySetupPage: React.FC = () => {
                 <div className="text-center">
                     <KeyIcon className="w-10 h-10 mx-auto text-primary-start mb-4" />
                     <h1 className="text-3xl font-bold text-white mb-2">One Last Step</h1>
-                    <p className="text-gray-400 mb-6">Enter your Gemini API Key to start building. This is stored securely in your browser's local storage.</p>
+                    <p className="text-gray-400 mb-6">Enter your Gemini API Key to start building. This key will be stored securely with your profile.</p>
                 </div>
                 
                 <form onSubmit={handleGeminiKeySave} className="space-y-4">
