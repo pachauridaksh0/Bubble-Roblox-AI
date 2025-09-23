@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, LockClosedIcon } from '@heroicons/react/24/solid';
@@ -16,7 +17,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({ isOpen, onClos
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
-        if (password === '1234') { // Hardcoded password as per original logic
+        if (password === '123456') { // Hardcoded password as per original logic
             loginAsAdmin();
             onClose();
         } else {

@@ -69,12 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
         }
 
-        const adminStatus = sessionStorage.getItem('isAdmin');
-        if (adminStatus === 'true') {
-            setIsAdmin(true);
-        }
-        
-        // This function fetches all user data and only sets loading to false when complete.
+        // This function fetches all user data and determines admin status from multiple sources.
         const resolveUserSession = async (currentSession: Session | null) => {
             if (originalAdminState) {
                 setLoading(false); // Impersonation is synchronous, no loading needed.
@@ -85,6 +80,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const currentUser = currentSession?.user ?? null;
             setUser(currentUser);
             setProviders(currentUser?.identities?.map(i => i.provider as string) ?? []);
+
+            let userIsAdmin = false;
+
+            // 1. Check for password-based admin login (via sessionStorage)
+            if (sessionStorage.getItem('isAdmin') === 'true') {
+                userIsAdmin = true;
+            }
+
+            // 2. Check for hardcoded admin email
+            if (currentUser?.email === 'aadhavan.pachauri@gmail.com') {
+                userIsAdmin = true;
+            }
 
             if (currentUser) {
                 try {
@@ -98,6 +105,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         throw error;
                     }
                     setProfile(profileData);
+
+                    // 3. Check for 'admin' role from the database profile
+                    if (profileData?.role === 'admin') {
+                        userIsAdmin = true;
+                    }
+
                     setGeminiApiKey(profileData?.gemini_api_key || null);
                     setProfileError(null);
                 } catch (error: any) {
@@ -112,7 +125,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             } else {
                 setProfile(null);
                 setGeminiApiKey(null);
+                // If there's no user, they can't be an admin. This is an important reset.
+                userIsAdmin = false;
             }
+
+            // Set the final admin state based on all checks
+            setIsAdmin(userIsAdmin);
+
             // Crucially, set loading to false only after all async operations are done.
             setLoading(false);
         };
