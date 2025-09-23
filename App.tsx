@@ -1,13 +1,16 @@
 
 import React from 'react';
 import { Layout } from './components/layout/Layout';
-import { AuthPage } from './components/auth/AuthPage';
 import { WelcomePage } from './components/pages/WelcomePage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AdminPage } from './components/admin/AdminPage';
+import { CompleteProfilePage } from './components/auth/CompleteProfilePage';
+import { ApiKeySetupPage } from './components/auth/ApiKeySetupPage';
+import { FullScreenError } from './components/ui/FullScreenError';
+import { UpdateDisplayNamePage } from './components/auth/UpdateDisplayNamePage';
 
 const AppContent: React.FC = () => {
-  const { session, loading, geminiApiKey } = useAuth();
-  const [showWelcome, setShowWelcome] = React.useState(true);
+  const { session, profile, loading, geminiApiKey, isAdmin, isImpersonating, profileError } = useAuth();
 
   if (loading) {
     return (
@@ -19,24 +22,52 @@ const AppContent: React.FC = () => {
       </div>
     );
   }
-
-  if (!session) {
-      if (showWelcome) {
-         return <WelcomePage onGetStarted={() => setShowWelcome(false)} />;
-      }
-      return <AuthPage />;
+  
+  // If the initial profile fetch failed due to a network error, show an error page.
+  if (profileError) {
+    return (
+        <FullScreenError
+            title="Connection Error"
+            message={profileError}
+            onRetry={() => window.location.reload()}
+        />
+    );
+  }
+  
+  if (isAdmin && !isImpersonating) {
+    return <AdminPage />;
   }
 
-  if (!geminiApiKey) {
-      return <AuthPage />;
+  // Check for login status
+  if (session) {
+    // User is logged in, now check for setup steps
+    // Step 1: Force profile completion if it's missing or incomplete.
+    if (!profile || !profile.roblox_username) {
+        return <CompleteProfilePage />;
+    }
+    
+    // Step 2: Force display name update if it looks like an email.
+    // This catches existing users who had their email set as their name.
+    const isDisplayNameEmail = profile.roblox_username.includes('@') && profile.roblox_username.includes('.');
+    if (isDisplayNameEmail) {
+        return <UpdateDisplayNamePage />;
+    }
+    
+    // Step 3: Force API key setup if profile is complete but key is missing.
+    if (!geminiApiKey) {
+        return <ApiKeySetupPage />;
+    }
+
+    // All setup complete, show the main application.
+    return (
+      <div className="bg-bg-primary text-gray-200 font-sans min-h-screen">
+        <Layout geminiApiKey={geminiApiKey} />
+      </div>
+    );
+  } else {
+    // User is not logged in, show the public landing/welcome page.
+    return <WelcomePage />;
   }
-
-
-  return (
-    <div className="bg-bg-primary text-gray-200 font-sans min-h-screen">
-      <Layout geminiApiKey={geminiApiKey} />
-    </div>
-  );
 };
 
 const App: React.FC = () => {

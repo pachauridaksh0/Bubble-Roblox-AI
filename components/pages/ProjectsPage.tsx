@@ -1,24 +1,38 @@
 
 import React from 'react';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import { ProjectCard } from '../dashboard/ProjectCard';
-import { Project } from '../../types';
+import { Project, Profile } from '../../types';
 
 interface ProjectsPageProps {
   projects: Project[];
   onSelectProject: (project: Project) => void;
   onNewProjectClick: () => void;
   isLoading: boolean;
+  profile: Profile | null;
+  error: string | null;
 }
 
-export const ProjectsPage: React.FC<ProjectsPageProps> = ({ projects, onSelectProject, onNewProjectClick, isLoading }) => {
+export const ProjectsPage: React.FC<ProjectsPageProps> = ({ projects, onSelectProject, onNewProjectClick, isLoading, profile, error }) => {
+  const displayName = profile?.roblox_username?.split(' ')[0] || 'there';
+
+  if (error) {
+      return (
+          <div className="flex flex-col items-center justify-center h-[calc(100vh-10rem)] text-center p-8">
+              <ExclamationTriangleIcon className="w-12 h-12 text-error mb-4" />
+              <h2 className="text-xl font-semibold text-white">Could Not Load Projects</h2>
+              <p className="text-gray-400 max-w-md">{error}</p>
+          </div>
+      );
+  }
+
   return (
     <div className="p-8">
       <div className="flex justify-between items-center mb-8">
         <div>
-            <h1 className="text-3xl font-bold text-white">Your Projects</h1>
-            <p className="text-gray-400 mt-1">Select a project to start building with AI</p>
+            <h1 className="text-3xl font-bold text-white">Welcome back, {displayName}!</h1>
+            <p className="text-gray-400 mt-1">Select a project to start building or create a new one.</p>
         </div>
         <button 
           onClick={onNewProjectClick}

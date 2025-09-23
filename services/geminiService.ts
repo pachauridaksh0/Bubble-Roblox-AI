@@ -1,6 +1,5 @@
-
 import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
-import { Task } from '../types';
+import { Task, ProjectPlatform, ThinkerResponse } from '../types';
 
 export interface GeminiResponse {
     explanation: string;
@@ -40,11 +39,47 @@ Follow these rules:
 
 - You MUST respond in the JSON format defined in the schema.`;
 
-const codeGenerationInstruction = `You are "Bubble", an expert AI assistant for Roblox developers. Your primary goal is to be helpful and conversational.
+const robloxCodeGenerationInstruction = `You are "Bubble", an expert AI assistant for Roblox developers. Your primary goal is to be helpful and conversational.
 - You will be given a specific task from a larger plan.
-- Generate the Lua code required to complete ONLY that task.
+- Generate the Luau code required to complete ONLY that task.
 - Provide a brief, friendly explanation of the code you've written.
 - You MUST respond in the JSON format defined in the schema.`;
+
+const webCodeGenerationInstruction = `You are "Bubble", an expert AI assistant for full-stack web development.
+- You will be given a specific task from a larger plan.
+- Your goal is to generate a single, self-contained HTML file that accomplishes the task.
+- The generated code MUST include all necessary HTML, CSS (inside <style> tags), and JavaScript (inside <script> tags) in one file.
+- Provide a brief, friendly explanation of the code you've written.
+- You MUST respond in the JSON format defined in the schema, placing the entire HTML content into the "code" field.`;
+
+const standingInstruction = `You are a helpful, optimistic AI assistant. Your goal is to fully understand the user's request and expand upon it in a constructive way.
+- First, briefly summarize your understanding of the user's goal in the 'thought' field.
+- Then, lay out a high-level plan or a series of steps to achieve it in the 'response' field.
+- Maintain a positive and encouraging tone.
+- You MUST respond in the JSON format defined in the schema.`;
+
+const opposingInstruction = `You are a critical, cautious AI assistant. Your role is to act as a "red team" member, challenging the assumptions and plans related to a user's request.
+- You will be given a user's request and a "standing" plan created by another AI.
+- Your goal is to identify potential risks, edge cases, or alternative approaches that might be better.
+- In the 'thought' field, summarize your critique.
+- In the 'response' field, phrase your feedback constructively. Start by acknowledging the standing plan, then introduce your points with phrases like "However, have we considered...", "A potential risk here is...", or "An alternative approach could be...".
+- Be specific in your critique. Don't just say "it's bad," explain *why* something might be a problem.
+- You MUST respond in the JSON format defined in the schema.`;
+
+const synthesisInstruction = `You are a wise, synthesizing AI project lead. You have been presented with a user's request, an initial "standing" plan, and a "critique" from an opposing perspective. Your job is to create a final, balanced response.
+- Your response should integrate the best ideas from both the standing and opposing viewpoints.
+- Acknowledge the user's goal, summarize the core of the initial plan, and incorporate the valid concerns or better alternatives from the critique.
+- Produce a final, actionable plan or response for the user that is more robust because of the debate.
+- The final response should be a clear, single piece of text directed at the user.`;
+
+const thinkerSchema = {
+    type: Type.OBJECT,
+    properties: {
+        thought: { type: Type.STRING, description: "A brief summary of your thinking process and how you are approaching the request based on your persona." },
+        response: { type: Type.STRING, description: "Your main response, following the instructions for your persona (e.g., the plan, the critique)." }
+    },
+    required: ["thought", "response"]
+};
 
 
 // Helper for retries
@@ -71,11 +106,28 @@ export const validateApiKey = async (apiKey: string): Promise<boolean> => {
     }
 };
 
-export const generateClarifyingQuestions = async (prompt: string, apiKey: string): Promise<ClarificationQuestionsResponse> => {
+export const generateChatTitle = async (prompt: string, apiKey: string): Promise<string> => {
+    const ai = new GoogleGenAI({ apiKey });
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Based on the following user prompt, generate a short, descriptive chat title (3-5 words max). Do not use quotes or special characters.
+
+User prompt: "${prompt}"`,
+        config: {
+            systemInstruction: 'You are an AI that creates concise titles for conversations.',
+            temperature: 0.2,
+            thinkingConfig: { thinkingBudget: 0 },
+        },
+    });
+    // Clean up response: remove quotes, trim whitespace
+    return response.text.replace(/"/g, '').trim();
+}
+
+export const generateClarifyingQuestions = async (prompt: string, apiKey: string, model: string): Promise<ClarificationQuestionsResponse> => {
     const ai = new GoogleGenAI({ apiKey: apiKey });
     
     const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: model,
         contents: `User's goal: "${prompt}"`,
         config: {
             systemInstruction: clarificationInstruction,
@@ -98,7 +150,7 @@ export const generateClarifyingQuestions = async (prompt: string, apiKey: string
     return JSON.parse(jsonString) as ClarificationQuestionsResponse;
 }
 
-export const generatePlan = async (prompt: string, apiKey: string): Promise<PlanResponse> => {
+export const generatePlan = async (prompt: string, apiKey: string, model: string): Promise<PlanResponse> => {
     const ai = new GoogleGenAI({ apiKey: apiKey });
     const maxRetries = 3;
     let lastError: Error | null = null;
@@ -106,7 +158,7 @@ export const generatePlan = async (prompt: string, apiKey: string): Promise<Plan
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const response = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
+                model: model,
                 contents: `User request: "${prompt}"`,
                 config: {
                     systemInstruction: planGenerationInstruction,
@@ -142,7 +194,7 @@ export const generatePlan = async (prompt: string, apiKey: string): Promise<Plan
 };
 
 
-export const generateCodeForTask = async (task: string, apiKey: string): Promise<GeminiResponse> => {
+export const generateCodeForTask = async (task: string, platform: ProjectPlatform, apiKey: string, model: string): Promise<GeminiResponse> => {
      if (!apiKey) {
         throw new Error("Gemini API key is not set.");
     }
@@ -150,11 +202,13 @@ export const generateCodeForTask = async (task: string, apiKey: string): Promise
     const ai = new GoogleGenAI({ apiKey: apiKey });
     const maxRetries = 3;
     let lastError: Error | null = null;
+    
+    const codeGenerationInstruction = platform === 'Web App' ? webCodeGenerationInstruction : robloxCodeGenerationInstruction;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const response: GenerateContentResponse = await ai.models.generateContent({
-                model: "gemini-2.5-flash",
+                model: model,
                 contents: `Task: "${task}"`,
                 config: {
                     systemInstruction: codeGenerationInstruction,
@@ -164,7 +218,7 @@ export const generateCodeForTask = async (task: string, apiKey: string): Promise
                         properties: {
                             code: {
                                 type: Type.STRING,
-                                description: "The generated Lua code for Roblox to complete the task.",
+                                description: `The generated code (${platform === 'Web App' ? 'self-contained HTML' : 'Luau'}) to complete the task.`,
                             },
                             explanation: {
                                  type: Type.STRING,
@@ -199,3 +253,43 @@ export const generateCodeForTask = async (task: string, apiKey: string): Promise
         code: null
     };
 };
+
+export const generateThinkerResponse = async (prompt: string, apiKey: string, model: string): Promise<{ standing: ThinkerResponse, opposing: ThinkerResponse, final: string }> => {
+    const ai = new GoogleGenAI({ apiKey });
+
+    // 1. Standing Response
+    const standingResponseObj = await ai.models.generateContent({
+        model: model,
+        contents: `User request: "${prompt}"`,
+        config: {
+            systemInstruction: standingInstruction,
+            responseMimeType: "application/json",
+            responseSchema: thinkerSchema,
+        }
+    });
+    const standing = JSON.parse(standingResponseObj.text.trim()) as ThinkerResponse;
+
+    // 2. Opposing Response
+    const opposingResponseObj = await ai.models.generateContent({
+        model: model,
+        contents: `The user's request is: "${prompt}". The initial plan is: "${standing.response}". Now, provide your critique.`,
+        config: {
+            systemInstruction: opposingInstruction,
+            responseMimeType: "application/json",
+            responseSchema: thinkerSchema,
+        }
+    });
+    const opposing = JSON.parse(opposingResponseObj.text.trim()) as ThinkerResponse;
+
+    // 3. Synthesis Response
+    const synthesisResponseObj = await ai.models.generateContent({
+        model: model,
+        contents: `User request: "${prompt}"\n\nInitial Plan:\n${standing.response}\n\nCritique/Alternatives:\n${opposing.response}\n\nNow, generate the final synthesized response for the user.`,
+        config: {
+            systemInstruction: synthesisInstruction,
+        }
+    });
+    const final = synthesisResponseObj.text;
+
+    return { standing, opposing, final };
+}

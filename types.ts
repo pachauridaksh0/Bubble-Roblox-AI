@@ -1,4 +1,5 @@
 
+
 export type Sender = 'user' | 'ai';
 
 export type TaskStatus = 'pending' | 'in-progress' | 'complete';
@@ -25,9 +26,28 @@ export interface Clarification {
     answers?: string[];
 }
 
+export type ChatMode = 'chat' | 'plan' | 'build' | 'thinker' | 'super_agent';
+
+export interface Chat {
+  id: string; // uuid
+  project_id: string; // uuid
+  user_id: string; // uuid
+  name: string;
+  mode: ChatMode;
+  created_at: string;
+  updated_at: string;
+}
+
+// For Thinker Mode
+export interface ThinkerResponse {
+    thought: string;
+    response: string;
+}
+
 export interface Message {
   id: string; // uuid
   project_id: string; // uuid
+  chat_id: string; // uuid
   user_id?: string; // uuid, nullable for AI messages
   text: string;
   sender: Sender;
@@ -36,10 +56,15 @@ export interface Message {
   plan?: Plan;
   clarification?: Clarification;
   created_at?: string;
+
+  // For Thinker Mode
+  standing_response?: ThinkerResponse;
+  opposing_response?: ThinkerResponse;
 }
 
 export type ProjectStatus = 'In Progress' | 'Archived';
-export type ProjectPlatform = 'Roblox Studio' | 'Web App';
+// FIX: Added 'Roblox Studio' to the ProjectPlatform type to allow for both project types.
+export type ProjectPlatform = 'Web App' | 'Roblox Studio';
 
 export interface Project {
   id: string; // uuid
@@ -48,6 +73,7 @@ export interface Project {
   description: string;
   status: ProjectStatus;
   platform: ProjectPlatform;
+  default_model: string;
   updated_at: string; 
   created_at: string;
 }
@@ -57,4 +83,7 @@ export interface Profile {
     roblox_id: string; // Note: Re-purposed to provider_user_id
     roblox_username: string; // Note: Re-purposed to display_name
     avatar_url: string;
+    role?: 'admin' | 'user';
+    status?: 'active' | 'banned';
+    ban_reason?: string | null;
 }

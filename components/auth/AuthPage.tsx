@@ -1,11 +1,11 @@
-
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ExclamationTriangleIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
-import { validateApiKey } from '../../services/geminiService';
+import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { CheckCircleIcon } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
+import { AdminLoginModal } from './AdminLoginModal';
 
-type AuthView = 'providers' | 'email_login' | 'email_signup';
+type AuthView = 'signin' | 'signup';
 
 const GoogleIcon = () => (
     <svg className="w-5 h-5" viewBox="0 0 48 48">
@@ -28,27 +28,37 @@ const RobloxLogo = () => (
 );
 
 export const AuthPage: React.FC = () => {
-  const { session, signInWithGoogle, signInWithPassword, signUpWithEmail, setGeminiApiKey } = useAuth();
+  const { signInWithGoogle, signInWithPassword, signUpWithEmail } = useAuth();
   
-  const [view, setView] = useState<AuthView>('providers');
+  const [view, setView] = useState<AuthView>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [isAdminModalOpen, setAdminModalOpen] = useState(false);
+  
+  const switchView = (newView: AuthView) => {
+    if (view === newView) return;
+    setView(newView);
+    setAuthError(null);
+    setAuthSuccess(null);
+  };
 
-  const [geminiKey, setGeminiKey] = useState('');
-  const [isValidating, setIsValidating] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
-
-  const handleAuthAction = async (action: 'login' | 'signup') => {
+  const handleAuthAction = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!email.trim() || !password.trim() || isAuthLoading) return;
     setIsAuthLoading(true);
     setAuthError(null);
+    setAuthSuccess(null);
     try {
-        if (action === 'login') {
+        if (view === 'signin') {
             await signInWithPassword(email, password);
+            // On successful sign-in, the App router will handle navigation.
         } else {
             await signUpWithEmail(email, password);
+            // On successful sign-up, set the success message.
+            setAuthSuccess('Success! Please check your email for a confirmation link.');
         }
     } catch (error) {
         setAuthError((error as Error).message || 'An unexpected error occurred.');
@@ -57,151 +67,86 @@ export const AuthPage: React.FC = () => {
     }
   };
 
-  const handleGeminiKeySave = async () => {
-    if (!geminiKey.trim() || isValidating) return;
-
-    setIsValidating(true);
-    setValidationError(null);
-
-    const isValid = await validateApiKey(geminiKey);
-
-    if (isValid) {
-      setGeminiApiKey(geminiKey);
-    } else {
-      setValidationError('Invalid API Key. Please check the key and try again.');
-      setGeminiKey('');
-    }
-    setIsValidating(false);
-  };
-  
-  const handleGeminiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setGeminiKey(e.target.value);
-    if(validationError) {
-        setValidationError(null);
-    }
-  }
-
-  const renderAuthContent = () => {
-      switch(view) {
-          case 'email_login':
-          case 'email_signup':
-              return (
-                  <motion.div key={view} initial={{ opacity: 0, x: 50 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -50 }}>
-                      <button onClick={() => { setView('providers'); setAuthError(null); }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-4">
-                          <ArrowLeftIcon className="w-4 h-4" />
-                          Back to all options
-                      </button>
-                      <h3 className="text-xl font-semibold text-white mb-4">{view === 'email_login' ? 'Sign in with Email' : 'Create an Account'}</h3>
-                      <div className="space-y-4">
-                          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" className="w-full px-4 py-2.5 bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-start" />
-                          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full px-4 py-2.5 bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-start" />
-                          <button
-                            onClick={() => handleAuthAction(view === 'email_login' ? 'login' : 'signup')}
-                            disabled={isAuthLoading}
-                            className="w-full px-4 py-2.5 bg-primary-start text-white rounded-lg font-semibold hover:bg-primary-start/80 transition-colors disabled:opacity-50 flex items-center justify-center"
-                            >
-                            {isAuthLoading ? <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : (view === 'email_login' ? 'Sign In' : 'Sign Up')}
-                          </button>
-                      </div>
-                      <p className="text-sm text-center mt-4 text-gray-400">
-                          {view === 'email_login' ? "Don't have an account?" : 'Already have an account?'}
-                          <button onClick={() => setView(view === 'email_login' ? 'email_signup' : 'email_login')} className="font-semibold text-primary-start/80 hover:text-primary-start ml-1">
-                              {view === 'email_login' ? 'Sign Up' : 'Sign In'}
-                          </button>
-                      </p>
-                  </motion.div>
-              );
-          case 'providers':
-          default:
-              return (
-                  <motion.div key="providers" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-                      <p className="text-gray-400 mb-6 text-center">Please log in to continue.</p>
-                      <button onClick={() => setView('email_login')} className="w-full flex items-center justify-center gap-3 px-4 py-2.5 text-white rounded-lg font-semibold transition-all duration-200 bg-white/10 hover:bg-white/20">
-                          Sign in with Email
-                      </button>
-                      <button onClick={signInWithGoogle} className="w-full flex items-center justify-center gap-3 px-4 py-2.5 text-black bg-white rounded-lg font-semibold transition-all duration-200 hover:bg-gray-200">
-                          <GoogleIcon />
-                          <span>Sign in with Google</span>
-                      </button>
-                      <button disabled className="w-full flex items-center justify-center gap-3 px-4 py-2.5 text-white rounded-lg font-semibold bg-zinc-800/50 cursor-not-allowed opacity-60 relative overflow-hidden">
-                          <RobloxLogo />
-                          <span>Sign in with Roblox</span>
-                          <span className="absolute top-1.5 right-1.5 text-[10px] font-bold text-cyan-300 bg-cyan-900/50 px-1.5 py-0.5 rounded">COMING SOON</span>
-                      </button>
-                  </motion.div>
-              );
-      }
-  }
-
-  const renderGeminiKeyContent = () => {
-    return (
-        <motion.div initial={{ opacity: 0}} animate={{opacity: 1}}>
-            <p className="text-gray-400 mb-6">Last step! Enter your Gemini API Key to start building.</p>
-            <div className="flex items-center space-x-2">
-                <input
-                type="password"
-                value={geminiKey}
-                onChange={handleGeminiKeyChange}
-                placeholder="Enter your Gemini API Key"
-                className={`w-full px-4 py-3 bg-white/5 border rounded-lg focus:outline-none focus:ring-2 transition-colors ${validationError ? 'border-red-500/50 focus:ring-red-500' : 'border-white/20 focus:ring-primary-start'}`}
-                />
-                <button
-                onClick={handleGeminiKeySave}
-                disabled={!geminiKey.trim() || isValidating}
-                className="px-4 py-3 bg-primary-start text-white rounded-lg font-semibold hover:bg-primary-start/80 transition-colors disabled:opacity-50 w-24 flex items-center justify-center"
-                >
-                {isValidating ? (
-                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                ) : 'Save'}
-                </button>
-            </div>
-            {validationError && (
-                <motion.p 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="text-red-400 text-sm mt-2 text-left flex items-center gap-2">
-                    <ExclamationTriangleIcon className="w-4 h-4" />
-                    {validationError}
-                </motion.p>
-            )}
-        </motion.div>
-    )
-  }
+  const renderAuthForms = () => (
+      <div>
+        <div className="flex border-b border-white/10 mb-6">
+            <button onClick={() => switchView('signin')} className={`flex-1 pb-2 font-semibold transition-colors ${view === 'signin' ? 'text-white border-b-2 border-primary-start' : 'text-gray-400 hover:text-white'}`}>Sign In</button>
+            <button onClick={() => switchView('signup')} className={`flex-1 pb-2 font-semibold transition-colors ${view === 'signup' ? 'text-white border-b-2 border-primary-start' : 'text-gray-400 hover:text-white'}`}>Sign Up</button>
+        </div>
+        <div className="space-y-3">
+            <button onClick={signInWithGoogle} className="w-full flex items-center justify-center gap-3 px-4 py-2.5 text-black bg-white rounded-lg font-semibold transition-all duration-200 hover:bg-gray-200">
+                <GoogleIcon />
+                <span>Continue with Google</span>
+            </button>
+            <button disabled className="w-full flex items-center justify-center gap-3 px-4 py-2.5 text-white rounded-lg font-semibold bg-zinc-800/50 cursor-not-allowed opacity-60 relative overflow-hidden">
+                <RobloxLogo />
+                <span>Continue with Roblox</span>
+                <span className="absolute top-1.5 right-1.5 text-[10px] font-bold text-cyan-300 bg-cyan-900/50 px-1.5 py-0.5 rounded">SOON</span>
+            </button>
+        </div>
+        <div className="flex items-center my-6">
+            <hr className="flex-grow border-white/10" />
+            <span className="mx-4 text-xs text-gray-500">OR</span>
+            <hr className="flex-grow border-white/10" />
+        </div>
+        <form onSubmit={handleAuthAction} className="space-y-4">
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" className="w-full px-4 py-2.5 bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-start" required />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full px-4 py-2.5 bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-start" required />
+            <button type="submit" disabled={isAuthLoading} className="w-full px-4 py-2.5 bg-primary-start text-white rounded-lg font-semibold hover:bg-primary-start/80 transition-colors disabled:opacity-50 flex items-center justify-center h-[45px]">
+                {isAuthLoading ? <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : (view === 'signin' ? 'Sign In' : 'Create Account')}
+            </button>
+        </form>
+      </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg-primary/50 backdrop-blur-md">
+    <>
       <motion.div
         initial={{ scale: 0.9, opacity: 0, y: 20 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         transition={{ type: 'spring', stiffness: 260, damping: 20 }}
         className="w-full max-w-md p-8 bg-bg-secondary/70 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl"
       >
-        <div className="flex justify-center items-center space-x-2.5 mb-4">
-            <span className="text-3xl">🫧</span>
-            <h2 className="text-3xl font-bold tracking-wider text-white">Bubble</h2>
+        <div className="flex justify-center items-center space-x-2.5 mb-6 text-center">
+            <div>
+                <span className="text-3xl">🫧</span>
+                <h2 className="text-3xl font-bold tracking-wider text-white">
+                  Welcome to Bubble
+                </h2>
+            </div>
         </div>
         
         <AnimatePresence mode="wait">
-            <div className="relative">
+            <motion.div
+              key="auth"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.2 }}
+            >
                 {authError && (
-                    <motion.p 
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="text-red-400 text-sm mb-4 text-center bg-red-500/10 p-2 rounded-md">
-                        {authError}
+                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-red-400 text-sm mb-4 text-center bg-red-500/10 p-2 rounded-md flex items-center justify-center gap-2">
+                         <ExclamationTriangleIcon className="w-5 h-5" />
+                         <span>{authError}</span>
                     </motion.p>
                 )}
-                {!session ? renderAuthContent() : renderGeminiKeyContent()}
-            </div>
+                 {authSuccess && (
+                    <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-green-400 text-sm mb-4 text-center bg-green-500/10 p-2 rounded-md flex items-center justify-center gap-2">
+                        <CheckCircleIcon className="w-5 h-5" />
+                        <span>{authSuccess}</span>
+                    </motion.p>
+                )}
+                {renderAuthForms()}
+            </motion.div>
         </AnimatePresence>
         
         <p className="text-xs text-gray-500 mt-6 text-center">
-            Your credentials are secure and handled by Supabase authentication.
+            Your credentials are{' '}
+            <button onClick={() => setAdminModalOpen(true)} className="bg-transparent border-none p-0 font-medium underline decoration-dotted cursor-pointer text-gray-500 hover:text-white focus:outline-none">secure</button>
+            {' '}and handled by Supabase.
         </p>
       </motion.div>
-    </div>
+      <AdminLoginModal isOpen={isAdminModalOpen} onClose={() => setAdminModalOpen(false)} />
+    </>
   );
 };

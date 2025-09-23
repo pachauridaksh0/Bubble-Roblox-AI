@@ -1,11 +1,7 @@
-
-import React from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
 import { CodeBracketSquareIcon, ChatBubbleLeftRightIcon, BoltIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
-
-interface WelcomePageProps {
-  onGetStarted: () => void;
-}
+import { AuthPage } from '../auth/AuthPage';
 
 const testimonials = [
   { name: 'Koslox', text: "It's simple interface yet powerful capabilities are actually insane. Lemonade helped me troubleshoot and bug-hunt a lot faster." },
@@ -16,7 +12,9 @@ const testimonials = [
   { name: 'RobloxScripterX', text: "The code generation is top-notch and almost always works out of the box. Highly recommended!" },
 ];
 
-export const WelcomePage: React.FC<WelcomePageProps> = ({ onGetStarted }) => {
+export const WelcomePage: React.FC = () => {
+  const [isAuthVisible, setAuthVisible] = useState(false);
+  
   const { scrollY } = useScroll();
   const titleY = useTransform(scrollY, [0, 400], [0, 150]);
   const subtitleY = useTransform(scrollY, [0, 400], [0, 100]);
@@ -38,9 +36,7 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onGetStarted }) => {
   const duplicatedTestimonials = [...testimonials, ...testimonials];
 
   return (
-    <div className="relative min-h-screen w-full bg-bg-primary text-white flex flex-col items-center justify-start p-4 overflow-x-hidden">
-        <div className="absolute inset-0 w-full h-full z-0" style={{ background: 'radial-gradient(circle at top center, rgba(99, 102, 241, 0.1), transparent 40%), radial-gradient(circle at bottom right, rgba(139, 92, 246, 0.08), transparent 50%), radial-gradient(circle at bottom left, rgba(99, 102, 241, 0.08), transparent 50%)' }}></div>
-        
+    <div className="relative min-h-screen w-full text-white flex flex-col items-center justify-start p-4 overflow-x-hidden gradient-bg animate-gradient">
         {/* Header */}
         <header className="absolute top-0 left-0 right-0 p-4 z-20">
              <div className="container mx-auto flex justify-between items-center">
@@ -49,7 +45,7 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onGetStarted }) => {
                     <span className="text-xl font-bold tracking-wider text-white">Bubble</span>
                 </div>
                 <button
-                    onClick={onGetStarted}
+                    onClick={() => setAuthVisible(true)}
                     className="px-4 py-2 text-sm font-semibold text-white bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors"
                 >
                     Sign In
@@ -86,7 +82,7 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onGetStarted }) => {
                     style={{ y: buttonY }}
                 >
                     <button
-                        onClick={onGetStarted}
+                        onClick={() => setAuthVisible(true)}
                         className="px-8 py-4 text-lg font-bold text-white bg-gradient-to-r from-primary-start to-primary-end rounded-lg shadow-lg hover:scale-105 transition-transform duration-200 flex items-center gap-2 mx-auto"
                     >
                         <span>Start Creating for Free</span>
@@ -144,6 +140,23 @@ export const WelcomePage: React.FC<WelcomePageProps> = ({ onGetStarted }) => {
         <footer className="w-full text-center p-8 border-t border-white/10 mt-20 z-10">
             <p className="text-gray-500">&copy; 2024 Bubble Inc. All rights reserved.</p>
         </footer>
+
+        {/* Auth Modal Overlay */}
+        <AnimatePresence>
+            {isAuthVisible && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    onClick={() => setAuthVisible(false)}
+                >
+                    <div onClick={(e) => e.stopPropagation()}>
+                        <AuthPage />
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     </div>
   );
 };

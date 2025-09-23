@@ -1,9 +1,8 @@
-
 import React, { useState } from 'react';
 import { Message, Task } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CodeBlock } from '../ui/CodeBlock';
-import { CheckCircleIcon, BuildingStorefrontIcon, PhotoIcon, LightBulbIcon, CodeBracketSquareIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon, BuildingStorefrontIcon, PhotoIcon, LightBulbIcon, CodeBracketSquareIcon, EyeIcon } from '@heroicons/react/24/solid';
 import { CpuChipIcon, ExclamationTriangleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { ClarificationForm } from './ClarificationForm';
 
@@ -11,7 +10,32 @@ interface ChatMessageProps {
   message: Message;
   onExecutePlan: (messageId: string) => void;
   onClarificationSubmit: (messageId: string, answers: string[]) => void;
+  isDimmed?: boolean;
+  isCurrentResult?: boolean;
+  searchQuery?: string;
+  isAdmin?: boolean;
 }
+
+const HighlightedText: React.FC<{ text: string; highlight: string }> = ({ text, highlight }) => {
+    if (!highlight.trim()) {
+        return <>{text}</>;
+    }
+    const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+    return (
+        <>
+            {parts.map((part, i) =>
+                regex.test(part) ? (
+                    <mark key={i} className="bg-yellow-400 text-black rounded px-0.5 py-0">
+                        {part}
+                    </mark>
+                ) : (
+                    part
+                )
+            )}
+        </>
+    );
+};
 
 const TaskStatusIcon: React.FC<{ status: Task['status'] }> = ({ status }) => {
     if (status === 'in-progress') {
@@ -129,7 +153,7 @@ const PlanExecutionRenderer: React.FC<{ plan: Message['plan'] }> = ({ plan }) =>
 };
 
 
-const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: string) => void }> = ({ message, onExecutePlan }) => {
+const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: string) => void, searchQuery?: string }> = ({ message, onExecutePlan, searchQuery }) => {
     const { plan } = message;
     const [selectedOption, setSelectedOption] = useState('build');
 
@@ -139,7 +163,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
 
     return (
         <div className="space-y-4">
-            <p className="px-5 py-3">{message.text}</p>
+            <p className="px-5 py-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
             
             <div className="mx-4 p-4 rounded-lg bg-black/20 border border-white/10">
                 <h4 className="font-semibold text-white mb-2">I'll include the following features:</h4>
@@ -193,7 +217,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     )
 }
 
-const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit: (messageId: string, answers: string[]) => void }> = ({ message, onClarificationSubmit }) => {
+const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit: (messageId: string, answers: string[]) => void, searchQuery?: string }> = ({ message, onClarificationSubmit, searchQuery }) => {
     const { clarification } = message;
     if (!clarification) return null;
 
@@ -203,12 +227,12 @@ const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit:
 
     // If answers are already provided, just show the text.
     if (clarification.answers) {
-        return <p className="px-5 py-3 whitespace-pre-wrap">{message.text}</p>;
+        return <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
     }
 
     return (
         <div className="space-y-4">
-            <p className="px-5 pt-3">{message.text}</p>
+            <p className="px-5 pt-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
             <ClarificationForm 
                 questions={clarification.questions}
                 onSubmit={handleSubmit}
@@ -217,14 +241,99 @@ const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit:
     )
 }
 
+const ThinkerRenderer: React.FC<{ message: Message; searchQuery?: string }> = ({ message, searchQuery }) => {
+    const [activeTab, setActiveTab] = useState<'final' | 'standing' | 'opposing'>('final');
+    
+    if (!message.standing_response || !message.opposing_response) {
+        // Fallback for when data is not available
+        return <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+    }
 
-export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExecutePlan, onClarificationSubmit }) => {
+    const tabs = [
+        { id: 'final', label: 'Final Plan' },
+        { id: 'standing', label: 'Standing' },
+        { id: 'opposing', label: 'Opposing' }
+    ];
+
+    const renderContent = () => {
+        switch(activeTab) {
+            case 'standing':
+                return (
+                    <div>
+                        <h5 className="font-semibold text-white mb-1">Thought Process</h5>
+                        <p className="text-sm text-gray-400 italic mb-3">"{message.standing_response?.thought}"</p>
+                        <h5 className="font-semibold text-white mb-2">Proposed Plan</h5>
+                        <p className="whitespace-pre-wrap text-gray-300">{message.standing_response?.response}</p>
+                    </div>
+                );
+            case 'opposing':
+                return (
+                    <div>
+                        <h5 className="font-semibold text-white mb-1">Thought Process</h5>
+                        <p className="text-sm text-gray-400 italic mb-3">"{message.opposing_response?.thought}"</p>
+                        <h5 className="font-semibold text-white mb-2">Critique & Alternatives</h5>
+                        <p className="whitespace-pre-wrap text-gray-300">{message.opposing_response?.response}</p>
+                    </div>
+                );
+            case 'final':
+            default:
+                 return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+        }
+    }
+
+    return (
+        <div className="py-2">
+            <div className="flex border-b border-white/10 px-4">
+                {tabs.map(tab => (
+                    <button 
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={`-mb-px px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === tab.id ? 'text-primary-start border-primary-start' : 'text-gray-400 hover:text-white border-transparent'}`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+            <div className="p-4">
+                 {renderContent()}
+            </div>
+        </div>
+    )
+}
+
+
+export const ChatMessage: React.FC<ChatMessageProps> = ({ 
+    message, 
+    onExecutePlan, 
+    onClarificationSubmit,
+    isDimmed = false,
+    isCurrentResult = false,
+    searchQuery = '',
+    isAdmin = false,
+}) => {
   const isUser = message.sender === 'user';
+  const [showRaw, setShowRaw] = useState(false);
 
   const variants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0 },
   };
+  
+  const containerClasses = [
+    'flex',
+    'flex-col',
+    isUser ? 'items-end' : 'items-start',
+    'transition-opacity duration-300',
+    isDimmed ? 'opacity-30' : 'opacity-100'
+  ].join(' ');
+  
+  const bubbleClasses = [
+      'rounded-2xl shadow-lg transition-all duration-200',
+      isUser
+        ? 'bg-gradient-to-br from-primary-start to-primary-end text-white'
+        : 'bg-bg-tertiary/50 backdrop-blur-md border border-white/10 text-gray-200',
+      isCurrentResult ? 'ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''
+  ].join(' ');
 
   return (
     <motion.div
@@ -232,29 +341,38 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, onExecutePlan
       initial="hidden"
       animate="visible"
       transition={{ duration: 0.3 }}
-      className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
+      className={containerClasses}
     >
-      <div className={`max-w-md lg:max-w-2xl px-1 ${isUser ? 'ml-auto' : 'mr-auto'}`}>
-        <div
-          className={`rounded-2xl shadow-lg ${
-            isUser
-              ? 'bg-gradient-to-br from-primary-start to-primary-end text-white'
-              : 'bg-bg-tertiary/50 backdrop-blur-md border border-white/10 text-gray-200'
-          }`}
-        >
-            {message.plan ? (
-                <PlanUIRenderer message={message} onExecutePlan={onExecutePlan} />
+      <div className={`max-w-md lg:max-w-3xl px-1 w-full`}>
+        <div className={bubbleClasses}>
+            {showRaw ? (
+                <pre className="p-4 text-xs bg-black/30 rounded-lg overflow-x-auto">
+                    {JSON.stringify(message, null, 2)}
+                </pre>
+            ) : message.standing_response ? (
+                <ThinkerRenderer message={message} searchQuery={searchQuery} />
+            ) : message.plan ? (
+                <PlanUIRenderer message={message} onExecutePlan={onExecutePlan} searchQuery={searchQuery} />
             ) : message.clarification ? (
-                <ClarificationRenderer message={message} onClarificationSubmit={onClarificationSubmit} />
+                <ClarificationRenderer message={message} onClarificationSubmit={onClarificationSubmit} searchQuery={searchQuery}/>
             ) : (
-                <p className="px-5 py-3 whitespace-pre-wrap">{message.text}</p>
+                <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery} /></p>
             )}
 
-            {message.code && message.language && (
-                <CodeBlock code={message.code} language={message.language} />
+            {message.code && !showRaw && (
+                <CodeBlock code={message.code} language={message.language || 'lua'} />
             )}
         </div>
       </div>
+      {isAdmin && !isUser && (
+        <button
+            onClick={() => setShowRaw(!showRaw)}
+            className="mt-2 flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-white bg-white/5 rounded-md transition-colors"
+        >
+            <EyeIcon className="w-3 h-3" />
+            {showRaw ? "Show Formatted" : "Raw Output"}
+        </button>
+      )}
     </motion.div>
   );
 };

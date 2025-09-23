@@ -1,5 +1,6 @@
 
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import { ProjectPlatform } from '../../types';
@@ -8,7 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateProject: (name: string, platform: ProjectPlatform) => void;
+  onCreateProject: (name: string, platform: ProjectPlatform) => Promise<void>;
+  isAdmin?: boolean;
 }
 
 const RobloxStudioIcon = () => (
@@ -29,42 +31,44 @@ const WebAppIcon = () => (
 )
 
 
-export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onCreateProject }) => {
+export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onCreateProject, isAdmin = false }) => {
   const [projectName, setProjectName] = useState('');
   const [platform, setPlatform] = useState<ProjectPlatform>('Roblox Studio');
+  const [isCreating, setIsCreating] = useState(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
   const { providers } = useAuth();
   
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    // Reset state every time the modal opens
+    if (isOpen) {
+        setProjectName('');
+        setPlatform('Roblox Studio');
+        setIsCreating(false);
+        setCreationError(null);
+    }
+  }, [isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (projectName.trim()) {
-      onCreateProject(projectName, platform);
-      setProjectName('');
+    if (!projectName.trim() || isCreating) return;
+
+    setIsCreating(true);
+    setCreationError(null);
+    try {
+      await onCreateProject(projectName, platform);
+      onClose(); // On success, close the modal.
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+      setCreationError(`Failed to create project. Please try again. (Error: ${errorMessage})`);
+    } finally {
+      // Always stop the loading state, whether it succeeded or failed.
+      setIsCreating(false);
     }
   };
 
-  const isRobloxRequired = platform === 'Roblox Studio';
-  const isRobloxLinked = providers.includes('roblox');
-  
-  // For web apps, we can assume email/google are sufficient
   const isWebAppProviderLinked = providers.includes('google') || providers.includes('email');
   
-  const canCreate = projectName.trim() && (
-      (isRobloxRequired && isRobloxLinked) ||
-      (!isRobloxRequired && isWebAppProviderLinked)
-  );
-
-  const getRequirementMessage = () => {
-      if (platform === 'Roblox Studio' && !isRobloxLinked) {
-          return "To create Roblox projects, please link your Roblox account in Settings.";
-      }
-      // Add other conditions here if needed
-      // if (platform === 'Web App' && !isWebAppProviderLinked) {
-      //     return "Link a Google or Email account to create web apps.";
-      // }
-      return null;
-  }
-
-  const requirementMessage = getRequirementMessage();
+  const canCreate = projectName.trim() && !isCreating && (isAdmin || isWebAppProviderLinked);
 
 
   return (
@@ -123,19 +127,24 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClos
                     </div>
                 </div>
                 
-                {requirementMessage && (
-                    <div className="p-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm rounded-lg flex items-start gap-3 mb-4">
+                {creationError && (
+                    <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-lg flex items-start gap-3 my-4">
                         <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5"/>
-                        <p>{requirementMessage}</p>
+                        <p>{creationError}</p>
                     </div>
                 )}
-                
+
                 <button
                   type="submit"
                   disabled={!canCreate}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-primary-start to-primary-end text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full h-[51px] flex items-center justify-center px-4 py-3 bg-gradient-to-r from-primary-start to-primary-end text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    Continue
+                  {isCreating ? (
+                      <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                  ) : 'Continue'}
                 </button>
             </form>
           </motion.div>

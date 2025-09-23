@@ -1,46 +1,52 @@
 
 import { Project } from '../types';
 
-// FIX: Updated mock data to conform to the Project type.
-// The `modified` property does not exist; replaced with `updated_at`.
-// Added required `user_id` and `created_at` properties.
-const oneYearAgo = new Date();
-oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+// This ID must match the mock user ID in AuthContext.tsx when DEV_BYPASS_LOGIN is true
+const MOCK_USER_ID = '11111111-1111-1111-1111-111111111111';
 
-const overOneYearAgo = new Date();
-overOneYearAgo.setFullYear(overOneYearAgo.getFullYear() - 1);
-overOneYearAgo.setDate(overOneYearAgo.getDate() - 1);
+const now = new Date();
 
+const oneDayAgo = new Date(now);
+oneDayAgo.setDate(now.getDate() - 1);
+
+const fiveDaysAgo = new Date(now);
+fiveDaysAgo.setDate(now.getDate() - 5);
+
+const twoWeeksAgo = new Date(now);
+twoWeeksAgo.setDate(now.getDate() - 14);
 
 export const mockProjects: Project[] = [
   {
     id: '1',
-    user_id: 'mock-user-id',
+    user_id: MOCK_USER_ID,
     name: 'My First Game',
     description: 'A simple obby game to learn the basics of Roblox development.',
     status: 'In Progress',
     platform: 'Roblox Studio',
-    updated_at: oneYearAgo.toISOString(),
-    created_at: oneYearAgo.toISOString(),
+    default_model: 'gemini-2.5-flash',
+    updated_at: oneDayAgo.toISOString(),
+    created_at: twoWeeksAgo.toISOString(),
   },
   {
     id: '2',
-    user_id: 'mock-user-id',
+    user_id: MOCK_USER_ID,
     name: 'RPG Framework',
     description: 'A complex RPG system with inventory, quests, and combat.',
     status: 'In Progress',
     platform: 'Roblox Studio',
-    updated_at: oneYearAgo.toISOString(),
-    created_at: oneYearAgo.toISOString(),
+    default_model: 'gemini-2.5-flash',
+    updated_at: fiveDaysAgo.toISOString(),
+    created_at: fiveDaysAgo.toISOString(),
   },
   {
     id: '3',
-    user_id: 'mock-user-id',
+    user_id: MOCK_USER_ID,
     name: 'Shooter Test',
     description: 'Testing advanced weapon mechanics and networking.',
     status: 'Archived',
     platform: 'Roblox Studio',
-    updated_at: overOneYearAgo.toISOString(),
-    created_at: overOneYearAgo.toISOString(),
+    default_model: 'gemini-2.5-flash',
+    updated_at: twoWeeksAgo.toISOString(),
+    created_at: twoWeeksAgo.toISOString(),
   },
 ];
