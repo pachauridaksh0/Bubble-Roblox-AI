@@ -68,15 +68,13 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <div className="flex-1 flex flex-col overflow-y-auto">
         {project ? (
           <div className="space-y-1">
-             {!isAdminView && (
-                <button
-                    onClick={onCreateChat}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold text-white rounded-md bg-primary-start hover:bg-primary-start/80 transition-all duration-150 ease-in-out transform hover:scale-[1.02] active:scale-95"
-                >
-                    <PlusIcon className="w-5 h-5" />
-                    <span>New Chat</span>
-                </button>
-             )}
+            <button
+                onClick={onCreateChat}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold text-white rounded-md bg-primary-start hover:bg-primary-start/80 transition-all duration-150 ease-in-out transform hover:scale-[1.02] active:scale-95"
+            >
+                <PlusIcon className="w-5 h-5" />
+                <span>New Chat</span>
+            </button>
              {chats.map(chat => (
                 <div
                     key={chat.id}

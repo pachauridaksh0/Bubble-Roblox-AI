@@ -361,6 +361,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
 }) => {
   const isUser = message.sender === 'user';
   const [showRaw, setShowRaw] = useState(false);
+  const [isCodeExpanded, setIsCodeExpanded] = useState(false);
 
   const variants = {
     hidden: { opacity: 0, y: 20 },
@@ -408,7 +409,35 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
             )}
 
             {message.code && !showRaw && (
-                <CodeBlock code={message.code} language={message.language || 'lua'} />
+              <>
+                <div className="border-t border-white/10 mx-4 mt-2"></div>
+                <div className="px-4 py-3">
+                    <button
+                        onClick={() => setIsCodeExpanded(!isCodeExpanded)}
+                        className="w-full flex justify-between items-center p-2 text-left bg-black/20 hover:bg-black/30 rounded-md transition-colors"
+                    >
+                        <div className="flex items-center space-x-2">
+                            <CodeBracketSquareIcon className="w-5 h-5 text-gray-400" />
+                            <span className="text-sm font-medium text-white">
+                                {isCodeExpanded ? 'Hide Code' : 'View Code'}
+                            </span>
+                        </div>
+                        <ChevronDownIcon className={`w-5 h-5 text-gray-400 transition-transform ${isCodeExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+                </div>
+                <AnimatePresence>
+                    {isCodeExpanded && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden"
+                        >
+                            <CodeBlock code={message.code} language={message.language || 'lua'} />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+              </>
             )}
         </div>
       </div>
