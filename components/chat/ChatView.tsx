@@ -1,7 +1,5 @@
 
-
-
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Message, Task, Project, Chat, ChatMode } from '../../types';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
@@ -11,7 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { addMessage, updateMessagePlan, updateMessageClarification } from '../../services/databaseService';
 import { runAgent } from '../../agents';
 import { generateCodeForTask } from '../../agents/build/codeGenerator';
-import { NEW_CHAT_NAME, INITIAL_GREETING_MSG_ID } from '../../constants';
+import { NEW_CHAT_NAME } from '../../constants';
+import { InitialPromptView } from './InitialPromptView';
 
 
 interface ChatViewProps {
@@ -41,26 +40,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
     currentSearchResultMessageIndex,
     isAdmin,
 }) => {
-  const { user, supabase, profile } = useAuth();
+  const { user, supabase } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [isPlanExecuting, setIsPlanExecuting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<(HTMLDivElement | null)[]>([]);
-
-  const displayMessages = useMemo(() => {
-    if (messages.length === 0 && !isLoadingHistory && profile) {
-      const greeterMessage: Message = {
-        id: INITIAL_GREETING_MSG_ID,
-        project_id: project.id,
-        chat_id: chat.id,
-        sender: 'ai',
-        text: `Hey ${profile.roblox_username.split(' ')[0]}! 👋 What awesome game should we start building today? Just a sentence or two is perfect.`,
-        created_at: new Date().toISOString(),
-      };
-      return [greeterMessage];
-    }
-    return messages;
-  }, [messages, isLoadingHistory, profile, project.id, chat.id]);
 
   const scrollToBottom = useCallback(() => {
     // Use instant scrolling to prevent visual glitches with rapid updates or animations.
@@ -161,10 +145,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     };
     
     const savedUserMessage = await addMessage(supabase, userMessage);
-    setMessages(prev => [
-        ...prev.filter(m => m.id !== INITIAL_GREETING_MSG_ID), 
-        savedUserMessage
-    ]);
+    setMessages(prev => [...prev, savedUserMessage]);
     setIsLoading(true);
 
     // AI Naming Logic
@@ -268,31 +249,22 @@ export const ChatView: React.FC<ChatViewProps> = ({
       );
   }
 
+  if (messages.length === 0 && !isLoadingHistory) {
+    return (
+      <InitialPromptView
+        onSendMessage={handleSendMessage}
+        onChatUpdate={(updates) => onChatUpdate(chat.id, updates)}
+        currentMode={chat.mode}
+        isAdmin={isAdmin}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-bg-primary">
-       <div className="flex-shrink-0 px-4 md:px-8 pt-4">
-        <div className="relative inline-flex items-center gap-2 p-1 bg-bg-secondary/70 rounded-lg border border-white/10">
-          <label htmlFor="mode-select" className="pl-2 pr-1 text-sm font-medium text-gray-400">
-            Agent Mode:
-          </label>
-          <select
-            id="mode-select"
-            value={chat.mode}
-            onChange={(e) => onChatUpdate(chat.id, { mode: e.target.value as ChatMode })}
-            className="bg-transparent text-white font-semibold focus:outline-none appearance-none pr-8 capitalize"
-            style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25em' }}
-          >
-            <option value="chat">Chat</option>
-            <option value="plan">Plan</option>
-            <option value="build">Build</option>
-            <option value="thinker">Thinker</option>
-            <option value="super_agent">Super Agent</option>
-          </select>
-        </div>
-      </div>
       <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
         <AnimatePresence initial={false}>
-          {displayMessages.map((msg, index) => (
+          {messages.map((msg, index) => (
             <div key={msg.id} ref={el => { messageRefs.current[index] = el; }}>
                 <ChatMessage 
                     message={msg} 
@@ -318,7 +290,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
         )}
         <div ref={messagesEndRef} />
       </div>
-      <ChatInput onSendMessage={handleSendMessage} isLoading={isLoading} />
+      <ChatInput
+        onSendMessage={handleSendMessage}
+        isLoading={isLoading}
+        chat={chat}
+        onChatUpdate={(updates) => onChatUpdate(chat.id, updates)}
+        isAdmin={isAdmin}
+      />
     </div>
   );
 };

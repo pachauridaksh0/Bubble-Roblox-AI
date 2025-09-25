@@ -4,6 +4,7 @@ import { runPlanAgent } from './plan/handler';
 import { runBuildAgent } from './build/handler';
 import { runThinkerAgent } from './thinker/handler';
 import { runSuperAgent } from './super_agent/handler';
+import { runProMaxAgent } from './pro_max/handler';
 
 export const runAgent = async (input: AgentInput): Promise<AgentOutput> => {
     try {
@@ -18,6 +19,8 @@ export const runAgent = async (input: AgentInput): Promise<AgentOutput> => {
                 return await runThinkerAgent(input);
             case 'super_agent':
                 return await runSuperAgent(input);
+            case 'pro_max':
+                return await runProMaxAgent(input);
             default:
                 // Fallback to the plan agent for any undefined modes
                 return await runPlanAgent(input);

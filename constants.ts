@@ -3,7 +3,6 @@ import { Message } from './types';
 
 // Local storage keys for credentials
 export const NEW_CHAT_NAME = "New Chat";
-export const INITIAL_GREETING_MSG_ID = 'initial-greeter-message';
 
 
 export const WELCOME_MESSAGE: Message = {

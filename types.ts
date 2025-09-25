@@ -27,7 +27,7 @@ export interface Clarification {
     answers?: string[];
 }
 
-export type ChatMode = 'chat' | 'plan' | 'build' | 'thinker' | 'super_agent';
+export type ChatMode = 'chat' | 'plan' | 'build' | 'thinker' | 'super_agent' | 'pro_max';
 
 export interface Chat {
   id: string; // uuid
