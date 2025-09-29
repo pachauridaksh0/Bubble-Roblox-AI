@@ -1,3 +1,5 @@
+
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { Project, Message, Plan, ProjectPlatform, Profile, Chat, ChatMode } from '../types';
 
@@ -30,7 +32,7 @@ export const getAllProjects = async (supabase: SupabaseClient): Promise<Project[
     return data || [];
 };
 
-export const createProject = async (supabase: SupabaseClient, userId: string, name: string, platform: ProjectPlatform): Promise<{project: Project, chat: Chat}> => {
+export const createProject = async (supabase: SupabaseClient, userId: string, name: string, platform: ProjectPlatform): Promise<Project> => {
     // First, create the project
     const { data: projectData, error: projectError } = await supabase
         .from('projects')
@@ -50,10 +52,7 @@ export const createProject = async (supabase: SupabaseClient, userId: string, na
         throw projectError;
     }
     
-    // Then, create the initial chat for this project
-    const newChat = await createChat(supabase, projectData.id, userId, "General Chat", "chat");
-
-    return { project: projectData, chat: newChat };
+    return projectData;
 }
 
 export const updateProject = async (supabase: SupabaseClient, projectId: string, updates: Partial<Project>): Promise<Project> => {
@@ -65,7 +64,7 @@ export const updateProject = async (supabase: SupabaseClient, projectId: string,
         .single();
 
     if (error) {
-        console.error('Error updating project:', error.message);
+        // Error is now handled by the calling component to prevent duplicate logs.
         throw error;
     }
     return data;

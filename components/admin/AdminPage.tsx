@@ -1,11 +1,14 @@
 
 
-import React, { useState, useEffect } from 'react';
+
+
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { LeftSidebar } from '../layout/LeftSidebar';
 import { ChatView } from '../chat/ChatView';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { AdminTopBar } from './AdminTopBar';
-import { Project, Message, ProjectPlatform, Chat } from '../../types';
+import { Project, Message, ProjectPlatform, Chat, ChatMode } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
     getAllProjects, 
@@ -13,7 +16,8 @@ import {
     getMessages, 
     getChatsForProject,
     updateProject as updateDbProject,
-    createChat as createDbChat
+    createChat as createDbChat,
+    updateChat as updateDbChat
 } from '../../services/databaseService';
 import { validateApiKey } from '../../services/geminiService';
 import { motion } from 'framer-motion';
@@ -21,6 +25,8 @@ import { KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { AdminUsersPage } from './AdminUsersPage';
 import { NewProjectModal } from '../dashboard/NewProjectModal';
 import { ProjectSettingsModal } from '../dashboard/ProjectSettingsModal';
+import { NewChatModal } from '../chat/NewChatModal';
+import { AdminSettingsPage } from './AdminSettingsPage';
 
 
 const AdminApiKeySetup: React.FC = () => {
@@ -87,13 +93,14 @@ const AdminApiKeySetup: React.FC = () => {
     );
 };
 
-type AdminView = 'projects' | 'users';
+type AdminView = 'projects' | 'users' | 'settings';
 
 export const AdminPage: React.FC = () => {
   const { geminiApiKey, user, supabase, profile, isAdmin } = useAuth();
   const [view, setView] = useState<AdminView>('projects');
   const [isNewProjectModalOpen, setNewProjectModalOpen] = useState(false);
   const [isProjectSettingsModalOpen, setProjectSettingsModalOpen] = useState(false);
+  const [isNewChatModalOpen, setNewChatModalOpen] = useState(false);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
@@ -194,8 +201,6 @@ export const AdminPage: React.FC = () => {
   const handleSettingsClick = () => {
     if (activeProject) {
         setProjectSettingsModalOpen(true);
-    } else {
-        alert("Select a project to view its settings. Global admin settings are not yet available.");
     }
   };
 
@@ -205,11 +210,10 @@ export const AdminPage: React.FC = () => {
     if (!projectOwnerId || !supabase) return;
     
     try {
-        const { project: newProject, chat: newChat } = await createProject(supabase, projectOwnerId, name, platform);
-        // Real-time subscription will add the project to the main list.
+        const newProject = await createProject(supabase, projectOwnerId, name, platform);
         setActiveProject(newProject);
-        setChats([newChat]);
-        setActiveChat(newChat);
+        setChats([]);
+        setActiveChat(null);
     } catch (error) {
         console.error("Failed to create project in admin mode:", error instanceof Error ? error.message : String(error));
         throw error;
@@ -226,12 +230,21 @@ export const AdminPage: React.FC = () => {
             setActiveProject(updatedProject);
         }
     } catch (error) {
-        console.error("Failed to update project in admin mode", error);
-        throw error; // Re-throw to be caught by modal
+        // Error is now handled by the calling component (e.g., ChatView or Settings Modal)
+        throw error;
+    }
+  };
+
+  const handleActiveProjectUpdate = async (updates: Partial<Project>) => {
+    if (activeProject) {
+        // Optimistically update the active project state for immediate UI feedback
+        setActiveProject(prev => prev ? { ...prev, ...updates } : null);
+        // Persist the changes to the database
+        await handleUpdateProjectForAdmin(activeProject.id, updates);
     }
   };
   
-  const handleCreateChatForAdmin = async () => {
+  const handleCreateChat = async (chatName: string, mode: ChatMode) => {
     if (!activeProject || !supabase) {
         alert("Please select a project first to add a chat.");
         return;
@@ -240,31 +253,64 @@ export const AdminPage: React.FC = () => {
     const projectOwnerId = activeProject.user_id;
 
     try {
-      const newChat = await createDbChat(supabase, activeProject.id, projectOwnerId, "New Chat", 'chat');
+      const newChat = await createDbChat(supabase, activeProject.id, projectOwnerId, chatName, mode);
       setChats(prev => [...prev, newChat]);
       setActiveChat(newChat);
     } catch (error) {
       console.error("Failed to create new chat in admin mode:", error instanceof Error ? error.message : String(error));
-      alert(`An error occurred while creating the chat: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
   };
+
+  const handleUpdateChat = useCallback(async (chatId: string, updates: Partial<Chat>) => {
+    if (!supabase) return;
+
+    // Optimistic UI update
+    setChats(prevChats =>
+      prevChats.map(c => (c.id === chatId ? { ...c, ...updates } : c))
+    );
+    setActiveChat(prevActiveChat =>
+      prevActiveChat?.id === chatId ? { ...prevActiveChat, ...updates } : prevActiveChat
+    );
+
+    try {
+      const updatedChatFromDb = await updateDbChat(supabase, chatId, updates);
+      // Re-sync with DB
+      setChats(prev => prev.map(c => c.id === chatId ? updatedChatFromDb : c));
+      setActiveChat(prev => (prev?.id === chatId ? updatedChatFromDb : prev));
+    } catch (error) {
+      console.error("Failed to update chat in admin mode:", error);
+      // Rollback could be implemented here if needed
+    }
+  }, [supabase]);
+  
+  const handleUpdateActiveChat = useCallback((updates: Partial<Chat>) => {
+    if (activeChat) {
+        handleUpdateChat(activeChat.id, updates);
+    }
+  }, [activeChat, handleUpdateChat]);
 
   const renderContent = () => {
     if (view === 'users') {
         return <AdminUsersPage />;
     }
+    
+    if (view === 'settings') {
+        return <AdminSettingsPage />;
+    }
 
     if (activeProject && activeChat && geminiApiKey) {
         return (
             <ChatView
-                key={activeChat.id}
+                key={`${activeChat.id}-${activeChat.mode}`}
                 project={activeProject}
                 chat={activeChat}
                 geminiApiKey={geminiApiKey}
                 messages={messages}
                 isLoadingHistory={isLoadingMessages}
                 setMessages={setMessages}
-                onChatUpdate={() => {}} // Admin view is read-only for chat properties
+                onChatUpdate={handleUpdateActiveChat}
+                onActiveProjectUpdate={handleActiveProjectUpdate}
                 searchQuery=""
                 onSearchResultsChange={() => {}}
                 currentSearchResultMessageIndex={-1}
@@ -292,8 +338,8 @@ export const AdminPage: React.FC = () => {
         chats={chats}
         activeChatId={activeChat?.id}
         onSelectChat={setActiveChat}
-        onCreateChat={handleCreateChatForAdmin}
-        onUpdateChat={() => {}}
+        onNewChatClick={() => setNewChatModalOpen(true)}
+        onUpdateChat={handleUpdateChat}
         onSettingsClick={handleSettingsClick}
         isAdminView={true}
       />
@@ -314,6 +360,13 @@ export const AdminPage: React.FC = () => {
         isOpen={isNewProjectModalOpen}
         onClose={() => setNewProjectModalOpen(false)}
         onCreateProject={handleCreateProject}
+        isAdmin={isAdmin}
+      />
+      <NewChatModal
+        isOpen={isNewChatModalOpen}
+        onClose={() => setNewChatModalOpen(false)}
+        onCreateChat={handleCreateChat}
+        existingChatCount={chats.length}
         isAdmin={isAdmin}
       />
       <ProjectSettingsModal

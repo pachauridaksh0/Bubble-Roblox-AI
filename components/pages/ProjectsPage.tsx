@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { PlusIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
@@ -28,15 +29,15 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ projects, onSelectPr
   }
 
   return (
-    <div className="p-8">
-      <div className="flex justify-between items-center mb-8">
+    <div className="p-4 md:p-8">
+      <div className="flex flex-col gap-4 text-center md:flex-row md:text-left md:justify-between md:items-center mb-8">
         <div>
-            <h1 className="text-3xl font-bold text-white">Welcome back, {displayName}!</h1>
+            <h1 className="text-3xl md:text-4xl font-bold text-white">Welcome back, {displayName}!</h1>
             <p className="text-gray-400 mt-1">Select a project to start building or create a new one.</p>
         </div>
         <button 
           onClick={onNewProjectClick}
-          className="bg-gradient-to-r from-primary-start to-primary-end text-white font-semibold px-5 py-2.5 rounded-lg flex items-center justify-center space-x-2 hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105">
+          className="bg-gradient-to-r from-primary-start to-primary-end text-white font-semibold px-5 py-2.5 rounded-lg flex items-center justify-center space-x-2 hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105 flex-shrink-0">
             <PlusIcon className="w-5 h-5" />
             <span>New Project</span>
         </button>

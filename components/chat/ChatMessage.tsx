@@ -1,58 +1,270 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Message, Task } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CodeBlock } from '../ui/CodeBlock';
 import { CheckCircleIcon, LightBulbIcon, CodeBracketSquareIcon, EyeIcon, ShareIcon, SparklesIcon } from '@heroicons/react/24/solid';
-import { CpuChipIcon, ExclamationTriangleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+// FIX: Imported `ArrowsPointingInIcon` to resolve a missing component error.
+import { CpuChipIcon, ExclamationTriangleIcon, ChevronDownIcon, ArrowsPointingOutIcon, XMarkIcon, PlusIcon, MinusIcon, ArrowPathIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { ClarificationForm } from './ClarificationForm';
+import { useToast } from '../../hooks/useToast';
+
+// New Modal Component for Mermaid Diagrams
+const MermaidModal: React.FC<{ svgContent: string; onClose: () => void }> = ({ svgContent, onClose }) => {
+    const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
+    const diagramRef = useRef<HTMLDivElement>(null);
+    const panState = useRef({ isPanning: false, startX: 0, startY: 0 });
+    const pinchState = useRef({ isPinching: false, initialDist: 0, initialScale: 1 });
+
+    const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+
+    const handleWheel = (e: React.WheelEvent) => {
+        e.preventDefault();
+        if (!diagramRef.current) return;
+    
+        const rect = diagramRef.current.getBoundingClientRect();
+        const zoomIntensity = 0.1;
+        const newScale = clamp(transform.scale - e.deltaY * zoomIntensity * 0.1, 0.2, 8);
+    
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+    
+        const newX = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+        const newY = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+    
+        setTransform({ scale: newScale, x: newX, y: newY });
+    };
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        panState.current = {
+            isPanning: true,
+            startX: e.clientX - transform.x,
+            startY: e.clientY - transform.y,
+        };
+        if (diagramRef.current) diagramRef.current.style.cursor = 'grabbing';
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!panState.current.isPanning) return;
+        const newX = e.clientX - panState.current.startX;
+        const newY = e.clientY - panState.current.startY;
+        setTransform({ ...transform, x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+        panState.current.isPanning = false;
+        if (diagramRef.current) diagramRef.current.style.cursor = 'grab';
+    };
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            const touch = e.touches[0];
+            panState.current = {
+                isPanning: true,
+                startX: touch.clientX - transform.x,
+                startY: touch.clientY - transform.y,
+            };
+        } else if (e.touches.length === 2) {
+             panState.current.isPanning = false;
+             const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+             pinchState.current = { isPinching: true, initialDist: dist, initialScale: transform.scale };
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        e.preventDefault();
+        if (e.touches.length === 1 && panState.current.isPanning) {
+            const touch = e.touches[0];
+            const newX = touch.clientX - panState.current.startX;
+            const newY = touch.clientY - panState.current.startY;
+            setTransform({ ...transform, x: newX, y: newY });
+        } else if (e.touches.length === 2 && pinchState.current.isPinching && diagramRef.current) {
+            const rect = diagramRef.current.getBoundingClientRect();
+            const newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            const scaleFactor = newDist / pinchState.current.initialDist;
+            const newScale = clamp(pinchState.current.initialScale * scaleFactor, 0.2, 8);
+            
+            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+
+            const newX = midX - (midX - transform.x) * (newScale / transform.scale);
+            const newY = midY - (midY - transform.y) * (newScale / transform.scale);
+            
+            setTransform({ scale: newScale, x: newX, y: newY });
+        }
+    };
+
+    const handleTouchEnd = () => {
+        panState.current.isPanning = false;
+        pinchState.current.isPinching = false;
+    };
+    
+    const handleDoubleClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+         if (!diagramRef.current) return;
+        const rect = diagramRef.current.getBoundingClientRect();
+        const newScale = clamp(transform.scale * 1.8, 0.2, 8);
+    
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+    
+        const newX = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+        const newY = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+    
+        setTransform({ scale: newScale, x: newX, y: newY });
+    };
+
+    const zoom = (direction: number) => {
+        if (!diagramRef.current) return;
+        const rect = diagramRef.current.getBoundingClientRect();
+        const zoomIntensity = 0.5;
+        const newScale = clamp(transform.scale + direction * zoomIntensity, 0.2, 8);
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const newX = centerX - (centerX - transform.x) * (newScale / transform.scale);
+        const newY = centerY - (centerY - transform.y) * (newScale / transform.scale);
+        setTransform({ scale: newScale, x: newX, y: newY });
+    };
+    
+    const resetTransform = () => setTransform({ scale: 1, x: 0, y: 0 });
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp} // Stop panning if mouse leaves window
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+        >
+            <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                className="relative w-full h-full bg-transparent flex items-center justify-center overflow-hidden"
+                onWheel={handleWheel}
+            >
+                {/* Close Button */}
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 bg-bg-secondary rounded-full hover:text-white transition-colors z-20">
+                    <XMarkIcon className="w-6 h-6" />
+                </button>
+                
+                {/* Diagram Container */}
+                <div
+                    ref={diagramRef}
+                    className="w-full h-full flex items-center justify-center"
+                    style={{ cursor: 'grab' }}
+                    onMouseDown={handleMouseDown}
+                    onTouchStart={handleTouchStart}
+                    onDoubleClick={handleDoubleClick}
+                >
+                    <div
+                        className="transition-transform duration-[50ms] ease-linear"
+                        style={{
+                            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+                        }}
+                        dangerouslySetInnerHTML={{ __html: svgContent }}
+                    />
+                </div>
+
+                {/* Zoom Controls */}
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 bg-bg-secondary rounded-full shadow-lg z-20">
+                     <button onClick={() => zoom(-1)} className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                        <MinusIcon className="w-6 h-6" />
+                    </button>
+                    <button onClick={resetTransform} className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Reset View">
+                        <ArrowsPointingInIcon className="w-6 h-6" />
+                    </button>
+                    <button onClick={() => zoom(1)} className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                        <PlusIcon className="w-6 h-6" />
+                    </button>
+                </div>
+            </motion.div>
+        </div>
+    );
+};
+
 
 // MermaidDiagram Component
 const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition }) => {
     const mermaidRef = useRef<HTMLDivElement>(null);
     const [svgContent, setSvgContent] = useState('');
     const [error, setError] = useState('');
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const { addToast } = useToast();
 
     useEffect(() => {
         const renderMermaid = async () => {
-            if (mermaidRef.current && graphDefinition && (window as any).mermaid) {
+            // Trim to handle empty or whitespace-only strings
+            const trimmedGraphDef = graphDefinition ? graphDefinition.trim() : '';
+            
+            if (trimmedGraphDef && (window as any).mermaid) {
+                const { mermaidAPI } = (window as any).mermaid;
                 try {
-                    setError('');
-                    const { mermaidAPI } = (window as any).mermaid;
-                    mermaidAPI.initialize({
-                        startOnLoad: false,
-                        theme: 'dark',
-                        securityLevel: 'loose',
-                        fontFamily: 'Inter, sans-serif',
-                        themeVariables: {
-                            background: '#1e293b', // bg-secondary
-                            primaryColor: '#334155', // bg-tertiary
-                            primaryTextColor: '#ffffff',
-                            lineColor: '#6366f1', // primary-start
-                            textColor: '#d1d5db', // gray-300
-                            nodeBorder: '#8b5cf6', // primary-end
-                        }
-                    });
-                    const { svg } = await mermaidAPI.render(`mermaid-graph-${Date.now()}`, graphDefinition);
+                    // 1. Validate the Mermaid syntax before attempting to render.
+                    // The parse function will throw an error if the syntax is invalid.
+                    await mermaidAPI.parse(trimmedGraphDef);
+                    setError(''); // Clear previous errors if parse is successful
+
+                    // 2. If validation passes, render the SVG.
+                    const { svg } = await mermaidAPI.render(`mermaid-graph-${Date.now()}`, trimmedGraphDef);
                     setSvgContent(svg);
                 } catch (e) {
+                    // This block now catches both parsing and rendering errors gracefully.
+                    const errorMessage = "Could not render the visual plan. The diagram syntax returned by the AI appears to be invalid.";
                     console.error("Mermaid rendering error:", e);
-                    setError("Could not render the visual plan. The diagram syntax may be invalid.");
+                    setError(errorMessage);
                     setSvgContent('');
+                    addToast(errorMessage, 'error');
                 }
+            } else {
+                // Handle cases where the AI provides no graph definition.
+                setSvgContent('');
+                // This is not an error, just an absence of a diagram. No need to show an error message.
+                // setError("The AI did not provide a visual plan for this step.");
             }
         };
         renderMermaid();
-    }, [graphDefinition]);
+    }, [graphDefinition, addToast]);
 
     if (error) {
         return (
-            <div className="p-4 bg-error/10 text-error/80 text-sm rounded-lg">
-                <p><strong>Visual Plan Error:</strong> {error}</p>
+            <div className="p-4 bg-error/10 text-error/80 text-sm rounded-lg flex items-center gap-3">
+                <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0" />
+                <div>
+                    <p className="font-semibold">Visual Plan Error</p>
+                    <p>{error}</p>
+                </div>
             </div>
         );
     }
 
-    return <div ref={mermaidRef} dangerouslySetInnerHTML={{ __html: svgContent }} className="flex justify-center p-2" />;
+    // Don't render anything if there's no content to prevent mermaid from erroring on empty divs
+    if (!svgContent) {
+        return <div className="p-4 text-center text-gray-500">Generating blueprint...</div>;
+    }
+
+    return (
+        <>
+            <div className="relative group">
+                <div ref={mermaidRef} dangerouslySetInnerHTML={{ __html: svgContent }} className="flex justify-center p-2" />
+                <button 
+                    onClick={() => setIsModalOpen(true)}
+                    className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-lg cursor-pointer"
+                    aria-label="Enlarge diagram"
+                >
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-primary rounded-full text-white text-sm shadow-lg">
+                        <ArrowsPointingOutIcon className="w-4 h-4" />
+                        <span>View Larger</span>
+                    </div>
+                </button>
+            </div>
+            <AnimatePresence>
+                {isModalOpen && <MermaidModal svgContent={svgContent} onClose={() => setIsModalOpen(false)} />}
+            </AnimatePresence>
+        </>
+    );
 };
 
 
@@ -212,6 +424,12 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     const { plan } = message;
     if (!plan) return null;
 
+    // Graceful fallback for malformed/empty plans from the AI
+    const isPlanEmpty = (!plan.features || plan.features.length === 0 || (plan.features.length === 1 && plan.features[0].includes("insufficient"))) && !plan.mermaidGraph;
+    if (isPlanEmpty) {
+        return <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+    }
+
     const hasStartedExecution = plan.tasks.some(t => t.status !== 'pending');
 
     if (hasStartedExecution) {
@@ -239,18 +457,22 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
                 </ul>
             </div>
             
-            {plan.mermaidGraph && (
-                 <div className="mx-4 p-4 rounded-lg bg-black/20 border border-white/10">
-                     <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
-                        <ShareIcon className="w-5 h-5 text-primary-start/80"/>
-                        Project Blueprint
-                    </h4>
-                     <p className="text-sm text-gray-400 mb-2">Here's a visual breakdown of how the components will work together.</p>
-                     <div className="p-2 rounded-lg bg-bg-secondary/70">
+            <div className="mx-4 p-4 rounded-lg bg-black/20 border border-white/10">
+                 <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
+                    <ShareIcon className="w-5 h-5 text-primary-start/80"/>
+                    Project Blueprint
+                </h4>
+                 <p className="text-sm text-gray-400 mb-2">Here's a visual breakdown of how the components will work together.</p>
+                 <div className="p-2 rounded-lg bg-bg-secondary/70">
+                    {plan.mermaidGraph ? (
                         <MermaidDiagram graphDefinition={plan.mermaidGraph} />
-                     </div>
+                    ) : (
+                        <div className="p-6 text-center text-gray-400 border-2 border-dashed border-bg-tertiary rounded-lg">
+                            <p className="font-semibold">Please Provide Project Details</p>
+                        </div>
+                    )}
                  </div>
-            )}
+             </div>
             
             <div className="px-4 pb-3">
                  <button

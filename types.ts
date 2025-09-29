@@ -75,6 +75,7 @@ export interface Project {
   status: ProjectStatus;
   platform: ProjectPlatform;
   default_model: string;
+  project_memory?: string | null;
   updated_at: string; 
   created_at: string;
 }

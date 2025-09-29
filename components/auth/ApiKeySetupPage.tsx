@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
@@ -22,7 +23,6 @@ export const ApiKeySetupPage: React.FC = () => {
                 await saveGeminiApiKey(geminiKey);
                 // On success, AuthContext state changes and App.tsx navigates away.
             } catch (error) {
-                // FIX: Display the specific error message from Supabase instead of a generic one.
                 const errorMessage = (error && typeof error === 'object' && 'message' in error)
                     ? (error as { message: string }).message
                     : 'Failed to save the API key. Please try again.';
@@ -70,9 +70,9 @@ export const ApiKeySetupPage: React.FC = () => {
                     </button>
                 </form>
                 {validationError && (
-                    <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-red-400 text-sm mt-3 text-left flex items-center gap-2">
-                        <ExclamationTriangleIcon className="w-4 h-4" />
-                        {validationError}
+                    <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-red-400 text-sm mt-3 text-left flex items-start gap-2">
+                        <ExclamationTriangleIcon className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        <span>{validationError}</span>
                     </motion.p>
                 )}
                 <p className="text-center mt-4"><a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-sm text-primary-start/80 hover:text-primary-start underline">Where can I get a Gemini API key?</a></p>

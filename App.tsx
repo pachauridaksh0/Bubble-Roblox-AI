@@ -8,6 +8,8 @@ import { CompleteProfilePage } from './components/auth/CompleteProfilePage';
 import { ApiKeySetupPage } from './components/auth/ApiKeySetupPage';
 import { FullScreenError } from './components/ui/FullScreenError';
 import { UpdateDisplayNamePage } from './components/auth/UpdateDisplayNamePage';
+import { ToastProvider } from './contexts/ToastContext';
+import { ToastContainer } from './components/ui/ToastContainer';
 
 const AppContent: React.FC = () => {
   const { session, profile, loading, geminiApiKey, isAdmin, isImpersonating, profileError } = useAuth();
@@ -73,7 +75,10 @@ const AppContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+        <ToastContainer />
+      </ToastProvider>
     </AuthProvider>
   );
 };

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 
 // FIX: Rewrote the hook to use a more standard and robust useEffect-based approach.
 // This resolves a race condition that was preventing the API key from being
@@ -7,7 +7,8 @@ import { useState, useEffect } from 'react';
 export function useLocalStorage(
   key: string,
   initialValue: string | null
-): [string | null, React.Dispatch<React.SetStateAction<string | null>>] {
+// FIX: Changed React.Dispatch and React.SetStateAction to Dispatch and SetStateAction to resolve namespace error.
+): [string | null, Dispatch<SetStateAction<string | null>>] {
   // State to store our value
   // Pass initial state function to useState so logic is only executed once
   const [storedValue, setStoredValue] = useState<string | null>(() => {

@@ -25,10 +25,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
   const [isModeSelectorOpen, setModeSelectorOpen] = useState(false);
   const modeSelectorRef = useRef<HTMLDivElement>(null);
   
-  const modeMap: Record<ChatMode, { name: string, description: string, icon: JSX.Element }> = {
+  // FIX: Changed JSX.Element to React.ReactElement to resolve namespace error.
+  const modeMap: Record<ChatMode, { name: string, description: string, icon: React.ReactElement }> = {
     'chat': { name: 'Bubble Chat', description: 'For conversational chat', icon: <ChatBubbleLeftEllipsisIcon className="w-5 h-5 text-primary-start" /> },
-    'plan': { name: 'Bubble Plan', description: 'Plan & build projects', icon: <SparklesIcon className="w-5 h-5 text-green-400" /> },
-    'build': { name: 'Bubble Plan', description: 'Plan & build projects', icon: <SparklesIcon className="w-5 h-5 text-green-400" /> },
+    'plan': { name: 'Bubble Memory', description: "Create/update the project's long-term memory", icon: <AcademicCapIcon className="w-5 h-5 text-blue-400" /> },
+    'build': { name: 'Bubble Build', description: 'Generate a build plan from project memory', icon: <SparklesIcon className="w-5 h-5 text-green-400" /> },
     'thinker': { name: 'Bubble Thinker', description: 'Debate ideas', icon: <CpuChipIcon className="w-5 h-5 text-yellow-400" /> },
     'super_agent': { name: 'Bubble Max', description: 'Advanced agent', icon: <PuzzlePieceIcon className="w-5 h-5 text-violet-400" /> },
     'pro_max': { name: 'Bubble Pro Max', description: 'Developer-only expert agent', icon: <AcademicCapIcon className="w-5 h-5 text-orange-400" /> }
@@ -75,13 +76,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
   };
   
   const handleModeChange = (newMode: ChatMode) => {
+    console.log(`[ChatInput] Mode change requested: ${newMode}`);
     onChatUpdate({ mode: newMode });
     setModeSelectorOpen(false);
   };
 
   const currentModeDetails = modeMap[chat.mode] || modeMap['chat'];
   
-  const modesToShow = ['chat', 'plan', 'thinker', 'super_agent'];
+  const modesToShow = ['chat', 'plan', 'build', 'thinker', 'super_agent'];
   if (isAdmin) {
       modesToShow.push('pro_max');
   }

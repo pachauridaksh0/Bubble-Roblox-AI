@@ -69,6 +69,10 @@
         background: linear-gradient(-45deg, #0f172a, #1e293b, #0f172a, #334155);
         background-size: 400% 400%;
       }
+      /* Hide the default Mermaid.js error display */
+      .mermaid-main-error {
+        display: none !important;
+      }
     </style>
   <script type="importmap">
 {
@@ -89,6 +93,24 @@
 <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
     window.mermaid = mermaid;
+    // Prevent re-initialization on HMR or other reloads by using a global flag.
+    if (!window.mermaidInitialized) {
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'dark',
+            securityLevel: 'loose',
+            fontFamily: 'Inter, sans-serif',
+            themeVariables: {
+                background: '#1e293b', // bg-secondary
+                primaryColor: '#334155', // bg-tertiary
+                primaryTextColor: '#ffffff',
+                lineColor: '#6366f1', // primary-start
+                textColor: '#d1d5db', // gray-300
+                nodeBorder: '#8b5cf6', // primary-end
+            }
+        });
+        window.mermaidInitialized = true;
+    }
 </script>
 </head>
   <body>

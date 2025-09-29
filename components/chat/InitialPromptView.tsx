@@ -1,15 +1,12 @@
 
-
-
-
 import React from 'react';
 import { motion } from 'framer-motion';
-import { ChatMode } from '../../types';
+import { Chat, ChatMode } from '../../types';
 import { ChatBubbleLeftEllipsisIcon, CpuChipIcon, SparklesIcon, PuzzlePieceIcon, AcademicCapIcon } from '@heroicons/react/24/solid';
 
 interface InitialPromptViewProps {
   onSendMessage: (text: string) => void;
-  onChatUpdate: (updates: Partial<{ mode: ChatMode }>) => void;
+  onChatUpdate: (updates: Partial<Chat>) => void;
   currentMode: ChatMode;
   isAdmin: boolean;
 }
@@ -31,8 +28,14 @@ export const InitialPromptView: React.FC<InitialPromptViewProps> = ({ onSendMess
     },
     {
       mode: 'plan' as ChatMode,
-      name: 'Bubble Plan',
-      description: 'For project planning and code generation.',
+      name: 'Bubble Memory',
+      description: "Create and update the project's long-term memory.",
+      icon: <AcademicCapIcon className="w-8 h-8 text-blue-400" />,
+    },
+    {
+      mode: 'build' as ChatMode,
+      name: 'Bubble Build',
+      description: 'Generate step-by-step build plans from memory.',
       icon: <SparklesIcon className="w-8 h-8 text-green-400" />,
     },
     {
@@ -58,6 +61,11 @@ export const InitialPromptView: React.FC<InitialPromptViewProps> = ({ onSendMess
     });
   }
   
+  const handleModelClick = (mode: ChatMode) => {
+    console.log(`[InitialPromptView] Model selected: ${mode}`);
+    onChatUpdate({ mode: mode });
+  };
+  
   return (
     <div className="flex flex-col items-center justify-center h-full p-8 text-white overflow-y-auto">
       <motion.div
@@ -79,7 +87,7 @@ export const InitialPromptView: React.FC<InitialPromptViewProps> = ({ onSendMess
                 {models.map((model) => (
                     <motion.div
                         key={model.mode}
-                        onClick={() => onChatUpdate({ mode: model.mode })}
+                        onClick={() => handleModelClick(model.mode)}
                         className={`p-6 border-2 rounded-xl cursor-pointer transition-all duration-200 ${currentMode === model.mode ? 'border-primary-start bg-primary-start/10 shadow-lg shadow-primary-start/10' : 'border-bg-tertiary hover:border-primary-start/50 bg-bg-secondary'}`}
                         whileHover={{ scale: 1.03 }}
                         whileTap={{ scale: 0.98 }}

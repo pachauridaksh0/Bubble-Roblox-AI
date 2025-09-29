@@ -1,8 +1,8 @@
-import { GoogleGenAI } from "@google/genai";
-import { AgentInput, AgentOutput } from '../types';
+import { GoogleGenAI, Type } from "@google/genai";
+import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
 import { clarificationInstruction, proMaxPlanGenerationInstruction } from './instructions';
-import { clarificationSchema, planSchema } from '../plan/schemas'; // Re-use schemas
-import { Task } from '../../types';
+import { planSchema } from '../build/schemas'; // Re-use schemas
+import { Task, Message } from '../../types';
 
 interface ClarificationQuestionsResponse {
     questions: string[];
@@ -19,38 +19,64 @@ interface PlanResponse {
 // Helper for retries
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+const mapMessagesToGeminiHistory = (messages: Message[]) => {
+  return messages.map(msg => ({
+    role: msg.sender === 'user' ? 'user' : 'model' as 'user' | 'model',
+    parts: [{ text: msg.text }],
+  })).filter(msg => msg.parts[0].text.trim() !== '');
+};
+
+const proMaxClarificationSchema = {
+    type: Type.OBJECT,
+    properties: {
+        questions: { 
+            type: Type.ARRAY, 
+            items: { type: Type.STRING },
+            description: "A list of questions to ask the user. Return an empty array if no clarification is needed."
+        }
+    },
+    required: ["questions"]
+};
+
 const generateClarifyingQuestions = async (input: AgentInput): Promise<ClarificationQuestionsResponse> => {
-    const { prompt, apiKey, model } = input;
+    const { prompt, apiKey, model, history, project } = input;
     const ai = new GoogleGenAI({ apiKey });
+
+    const geminiHistory = mapMessagesToGeminiHistory(history);
+    const contextPrompt = `PROJECT CONTEXT:\n${project.project_memory || 'No project context has been set yet.'}\n\nUSER REQUEST: "${prompt}"`;
+    const contents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
 
     const response = await ai.models.generateContent({
         model,
-        contents: `User's goal: "${prompt}"`,
+        contents: contents,
         config: {
             systemInstruction: clarificationInstruction,
             responseMimeType: "application/json",
-            responseSchema: clarificationSchema
+            responseSchema: proMaxClarificationSchema
         }
     });
     return JSON.parse(response.text.trim()) as ClarificationQuestionsResponse;
 };
 
 const generatePlan = async (input: AgentInput): Promise<PlanResponse> => {
-    const { prompt, answers, apiKey, model } = input;
+    const { prompt, answers, apiKey, model, history, project } = input;
     const ai = new GoogleGenAI({ apiKey });
     const maxRetries = 3;
     let lastError: Error | null = null;
 
-    let fullPrompt = `User request: "${prompt}"`;
+    let fullPrompt = `PROJECT CONTEXT:\n${project.project_memory || 'No project context has been set yet.'}\n\nUser request: "${prompt}"`;
     if (answers) {
         fullPrompt += "\n\nUser's answers to clarifying questions:\n" + answers.map((a, i) => `${i + 1}. ${a}`).join("\n");
     }
+
+    const geminiHistory = mapMessagesToGeminiHistory(history);
+    const contents = [...geminiHistory, { role: 'user', parts: [{ text: fullPrompt }] }];
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const response = await ai.models.generateContent({
                 model,
-                contents: fullPrompt,
+                contents: contents,
                 config: {
                     systemInstruction: proMaxPlanGenerationInstruction,
                     responseMimeType: "application/json",
@@ -70,14 +96,15 @@ const generatePlan = async (input: AgentInput): Promise<PlanResponse> => {
     throw new Error(`AI service unavailable after multiple retries. Details: ${errorMessage}`);
 };
 
-export const runProMaxAgent = async (input: AgentInput): Promise<AgentOutput> => {
+export const runProMaxAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
     const { project, chat, prompt } = input;
+    let messages: AgentOutput = [];
 
     // If answers are provided, skip asking questions and generate the plan directly.
     if (input.answers) {
         const planResponse = await generatePlan(input);
         const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
-        const planMessage: AgentOutput[0] = {
+        messages.push({
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
@@ -89,8 +116,8 @@ export const runProMaxAgent = async (input: AgentInput): Promise<AgentOutput> =>
                 tasks: planTasks,
                 isComplete: false,
             }
-        };
-        return [planMessage];
+        });
+        return { messages };
     }
 
     // Otherwise, start by asking clarifying questions.
@@ -98,7 +125,7 @@ export const runProMaxAgent = async (input: AgentInput): Promise<AgentOutput> =>
 
     if (questionResponse.questions && questionResponse.questions.length > 0) {
         // If there are questions, return a clarification message
-        const clarificationMessage: AgentOutput[0] = {
+        messages.push({
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
@@ -107,13 +134,13 @@ export const runProMaxAgent = async (input: AgentInput): Promise<AgentOutput> =>
                 prompt: prompt,
                 questions: questionResponse.questions,
             }
-        };
-        return [clarificationMessage];
+        });
+        return { messages };
     } else {
         // If no questions are needed, generate the plan immediately
         const planResponse = await generatePlan(input);
         const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
-        const planMessage: AgentOutput[0] = {
+        messages.push({
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
@@ -125,7 +152,7 @@ export const runProMaxAgent = async (input: AgentInput): Promise<AgentOutput> =>
                 tasks: planTasks,
                 isComplete: false,
             }
-        };
-        return [planMessage];
+        });
+        return { messages };
     }
 };

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserDropdown } from '../dashboard/UserDropdown';
 
-type AdminView = 'projects' | 'users';
+type AdminView = 'projects' | 'users' | 'settings';
 
 interface AdminTopBarProps {
     currentView: AdminView;
@@ -34,11 +34,11 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({ currentView, setView }
   }, []);
 
   return (
-    <header className="flex-shrink-0 h-16 flex items-center justify-between px-8 border-b border-white/10 bg-bg-primary">
+    <header className="flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-white/10 bg-bg-primary">
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3">
             <span className="text-2xl">🫧</span>
-            <span className="text-xl font-bold tracking-wider text-white">Bubble (Admin)</span>
+            <span className="hidden sm:inline text-xl font-bold tracking-wider text-white">Bubble (Admin)</span>
         </div>
         <div className="flex items-center gap-2 p-1 bg-black/20 rounded-lg">
             <button
@@ -52,6 +52,12 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({ currentView, setView }
                 className={`${navItemClasses} ${currentView === 'users' ? activeClasses : inactiveClasses}`}
             >
                 Users
+            </button>
+             <button
+                onClick={() => setView('settings')}
+                className={`${navItemClasses} ${currentView === 'settings' ? activeClasses : inactiveClasses}`}
+            >
+                Settings
             </button>
         </div>
       </div>
@@ -67,7 +73,7 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({ currentView, setView }
                       className="w-9 h-9 rounded-full object-cover bg-bg-tertiary"
                   />
               )}
-              <div>
+              <div className="hidden sm:block">
                   <p className="text-sm font-semibold text-white truncate max-w-[120px] text-left">{displayName}</p>
                   <p className="text-xs text-gray-500">Admin Profile</p>
               </div>

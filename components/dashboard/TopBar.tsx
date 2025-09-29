@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { MagnifyingGlassIcon, XMarkIcon, ChevronUpIcon, ChevronDownIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, XMarkIcon, ChevronUpIcon, ChevronDownIcon, Cog6ToothIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserDropdown } from './UserDropdown';
 
@@ -21,11 +22,11 @@ const ProjectSearchBar: React.FC<ProjectSearchBarProps> = ({
     onPrevSearchResult,
 }) => {
     return (
-        <div className="relative w-72">
+        <div className="relative w-48 md:w-72">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" />
             <input
                 type="text"
-                placeholder="Search in project..."
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
                 className="bg-bg-secondary/50 border border-bg-tertiary rounded-lg pl-10 pr-28 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary-start"
@@ -62,6 +63,9 @@ interface TopBarProps {
   currentSearchResultIndex: number;
   onNextSearchResult: () => void;
   onPrevSearchResult: () => void;
+  canShowPreview?: boolean;
+  isLivePreviewVisible?: boolean;
+  onToggleLivePreview?: () => void;
 }
 
 const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
@@ -76,7 +80,10 @@ export const TopBar: React.FC<TopBarProps> = ({
     searchResultCount,
     currentSearchResultIndex,
     onNextSearchResult,
-    onPrevSearchResult
+    onPrevSearchResult,
+    canShowPreview,
+    isLivePreviewVisible,
+    onToggleLivePreview
 }) => {
   const { profile, user, signOut, loading } = useAuth();
   const [isDropdownOpen, setDropdownOpen] = useState(false);
@@ -97,25 +104,25 @@ export const TopBar: React.FC<TopBarProps> = ({
 
 
   return (
-    <header className="flex-shrink-0 h-16 flex items-center justify-between px-8 border-b border-white/10 bg-bg-primary">
-      <div className="flex items-center gap-4">
+    <header className="flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-white/10 bg-bg-primary">
+      <div className="flex items-center gap-2 md:gap-4 flex-shrink min-w-0">
         <button onClick={onGoToDashboard} className="flex items-center space-x-2.5 transition-transform hover:scale-105">
             <span className="text-2xl">🫧</span>
-            <span className="text-xl font-bold tracking-wider text-white">Bubble</span>
+            <span className="hidden sm:inline text-xl font-bold tracking-wider text-white">Bubble</span>
         </button>
         {activeProjectName && (
             <>
-                <div className="h-6 w-px bg-white/10"></div>
-                <div className="flex items-center gap-2">
-                    <span className="font-semibold text-gray-200">{activeProjectName}</span>
-                    <button onClick={onProjectSettingsClick} className="p-1.5 text-gray-400 rounded-md hover:bg-white/10 hover:text-white transition-colors">
+                <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
+                <div className="hidden sm:flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-gray-200 truncate">{activeProjectName}</span>
+                    <button onClick={onProjectSettingsClick} className="p-1.5 text-gray-400 rounded-md hover:bg-white/10 hover:text-white transition-colors flex-shrink-0">
                         <Cog6ToothIcon className="w-5 h-5" />
                     </button>
                 </div>
             </>
         )}
       </div>
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-2 md:space-x-4">
         {activeProjectName ? (
             <ProjectSearchBar
                 searchQuery={searchQuery}
@@ -136,6 +143,20 @@ export const TopBar: React.FC<TopBarProps> = ({
             </div>
         )}
 
+        {canShowPreview && (
+          <button
+              onClick={onToggleLivePreview}
+              title="Toggle Live Preview"
+              className={`p-2 rounded-lg transition-colors ${
+                  isLivePreviewVisible
+                      ? 'bg-primary-start/20 text-primary-start'
+                      : 'text-gray-400 hover:bg-white/10 hover:text-white'
+              }`}
+          >
+              <ComputerDesktopIcon className="w-5 h-5" />
+          </button>
+        )}
+
         <div className="relative" ref={dropdownRef}>
             <button onClick={() => setDropdownOpen(prev => !prev)} className="flex items-center space-x-3 p-1 rounded-lg hover:bg-white/10 transition-colors">
                 {loading ? (
@@ -147,7 +168,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                         className="w-9 h-9 rounded-full object-cover bg-bg-tertiary"
                     />
                 )}
-                <div>
+                <div className="hidden sm:block">
                     <p className="text-sm font-semibold text-white truncate max-w-[120px] text-left">{displayName}</p>
                     <p className="text-xs text-gray-500">Profile</p>
                 </div>

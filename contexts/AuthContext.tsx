@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import type { Session, User, SupabaseClient, Provider } from '@supabase/supabase-js';
 import { Profile } from '../types';
@@ -114,11 +115,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setGeminiApiKey(profileData?.gemini_api_key || null);
                     setProfileError(null);
                 } catch (error: any) {
-                    console.error("Error fetching profile:", error);
-                    if (error.message?.includes('Failed to fetch')) {
+                    // FIX: Refined error handling to provide more descriptive console logs
+                    // and a more robust user-facing error message, resolving the "[object Object]" issue.
+                    // We now inspect the error object for a 'message' property for cleaner logging.
+                    const errorMessage = error?.message || 'An unknown error occurred.';
+                    console.error("Error fetching profile:", errorMessage, { originalError: error });
+
+                    if (errorMessage.includes('Failed to fetch')) {
                         setProfileError("We couldn't connect to our services to load your profile. Please check your internet connection and any browser extensions (like ad-blockers), then try again.");
                     } else {
-                        setProfileError("An unexpected error occurred while loading your profile.");
+                        // The error is not a simple network failure, so it might be something more serious
+                        // like a database permissions issue (RLS). We provide a clear message about this possibility.
+                        setProfileError("An unexpected error occurred while loading your profile. This can sometimes be caused by database permission issues (Row Level Security). Please contact support if this persists.");
                     }
                     setProfile(null);
                 }
@@ -198,9 +206,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
             await updateProfile(supabase, user.id, { gemini_api_key: key });
             setGeminiApiKey(key);
-        } catch (error) {
+        } catch (error: any) {
+            // Check for the specific Postgres error for a missing column
+            if (error.message && error.message.includes('column "gemini_api_key" does not exist')) {
+                // Log a detailed error for the developer in the console
+                console.error("Database schema mismatch detected. The 'gemini_api_key' column is missing from the 'profiles' table. The developer needs to run the migration script.");
+                // Throw a generic, user-friendly error to the UI
+                throw new Error("Failed to save API key. The application's database may need to be updated.");
+            }
             console.error("Failed to save API key:", error);
-            throw error;
+            throw error; // Re-throw other errors
         }
     };
     

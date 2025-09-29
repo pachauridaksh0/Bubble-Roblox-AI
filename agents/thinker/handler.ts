@@ -1,17 +1,29 @@
 import { GoogleGenAI } from "@google/genai";
-import { AgentInput, AgentOutput } from '../types';
+import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
 import { standingInstruction, opposingInstruction, synthesisInstruction } from './instructions';
 import { thinkerSchema } from './schemas';
-import { ThinkerResponse } from '../../types';
+import { ThinkerResponse, Message } from '../../types';
 
-export const runThinkerAgent = async (input: AgentInput): Promise<AgentOutput> => {
-    const { prompt, apiKey, model, project, chat } = input;
+const mapMessagesToGeminiHistory = (messages: Message[]) => {
+  // Thinker responses have complex objects, only use text for history
+  return messages.map(msg => ({
+    role: msg.sender === 'user' ? 'user' : 'model' as 'user' | 'model',
+    parts: [{ text: msg.text }],
+  })).filter(msg => msg.parts[0].text.trim() !== '');
+};
+
+export const runThinkerAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
+    const { prompt, apiKey, model, project, chat, history } = input;
     const ai = new GoogleGenAI({ apiKey });
 
+    const geminiHistory = mapMessagesToGeminiHistory(history);
+    const contextPrompt = `PROJECT CONTEXT:\n${project.project_memory || 'No project context has been set yet.'}\n\nUSER REQUEST: "${prompt}"`;
+
     // 1. Standing Response
+    const standingContents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
     const standingResponseObj = await ai.models.generateContent({
         model,
-        contents: `User request: "${prompt}"`,
+        contents: standingContents,
         config: {
             systemInstruction: standingInstruction,
             responseMimeType: "application/json",
@@ -21,9 +33,10 @@ export const runThinkerAgent = async (input: AgentInput): Promise<AgentOutput> =
     const standing = JSON.parse(standingResponseObj.text.trim()) as ThinkerResponse;
 
     // 2. Opposing Response
+    const opposingContents = [...geminiHistory, { role: 'user', parts: [{ text: `The user's request is: "${prompt}". The initial plan is: "${standing.response}". Now, provide your critique.` }] }];
     const opposingResponseObj = await ai.models.generateContent({
         model,
-        contents: `The user's request is: "${prompt}". The initial plan is: "${standing.response}". Now, provide your critique.`,
+        contents: opposingContents,
         config: {
             systemInstruction: opposingInstruction,
             responseMimeType: "application/json",
@@ -33,9 +46,10 @@ export const runThinkerAgent = async (input: AgentInput): Promise<AgentOutput> =
     const opposing = JSON.parse(opposingResponseObj.text.trim()) as ThinkerResponse;
 
     // 3. Synthesis Response
+    const synthesisContents = [...geminiHistory, { role: 'user', parts: [{ text: `User request: "${prompt}"\n\nInitial Plan:\n${standing.response}\n\nCritique/Alternatives:\n${opposing.response}\n\nNow, generate the final synthesized response for the user.` }] }];
     const synthesisResponseObj = await ai.models.generateContent({
         model,
-        contents: `User request: "${prompt}"\n\nInitial Plan:\n${standing.response}\n\nCritique/Alternatives:\n${opposing.response}\n\nNow, generate the final synthesized response for the user.`,
+        contents: synthesisContents,
         config: {
             systemInstruction: synthesisInstruction,
         }
@@ -51,5 +65,5 @@ export const runThinkerAgent = async (input: AgentInput): Promise<AgentOutput> =
         opposing_response: opposing,
     };
     
-    return [aiMessage];
+    return { messages: [aiMessage] };
 };

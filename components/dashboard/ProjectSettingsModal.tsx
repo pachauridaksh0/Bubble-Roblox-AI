@@ -14,6 +14,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOp
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [defaultModel, setDefaultModel] = useState('gemini-2.5-flash');
+  const [projectMemory, setProjectMemory] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,6 +23,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOp
       setName(project.name);
       setDescription(project.description);
       setDefaultModel(project.default_model || 'gemini-2.5-flash');
+      setProjectMemory(project.project_memory || '');
       setIsSaving(false);
       setError(null);
     }
@@ -38,6 +40,7 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOp
           name: name.trim(), 
           description: description.trim(),
           default_model: defaultModel,
+          project_memory: projectMemory.trim(),
       });
       onClose();
     } catch (err) {
@@ -86,6 +89,17 @@ export const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ isOp
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
                   className="w-full px-4 py-2.5 bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-start resize-none"
+                />
+              </div>
+               <div>
+                <label htmlFor="projectMemory" className="block text-sm font-medium text-gray-300 mb-2">Project Memory</label>
+                 <p className="text-xs text-gray-400 mb-2">This is the long-term memory or 'blueprint' the AI uses for context. You can edit it here.</p>
+                <textarea
+                  id="projectMemory"
+                  value={projectMemory}
+                  onChange={(e) => setProjectMemory(e.target.value)}
+                  rows={6}
+                  className="w-full font-mono text-xs px-4 py-2.5 bg-white/5 border border-white/20 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-start resize-y"
                 />
               </div>
 

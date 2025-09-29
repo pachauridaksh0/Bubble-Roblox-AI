@@ -1,131 +1,80 @@
 import { GoogleGenAI } from "@google/genai";
-import { AgentInput, AgentOutput } from '../types';
-import { clarificationInstruction, planGenerationInstruction } from './instructions';
-import { clarificationSchema, planSchema } from './schemas';
-import { Task } from '../../types';
+import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
+import { memoryCreationInstruction } from './instructions';
+import { planAgentSchema } from './schemas';
+import { Message } from '../../types';
 
-interface ClarificationQuestionsResponse {
-    questions: string[];
+interface AgentResponse {
+    projectMemory?: string;
+    responseText?: string;
 }
 
-interface PlanResponse {
-    title: string;
-    introduction: string;
-    features: string[];
-    mermaidGraph: string;
-    tasks: string[];
-}
-
-// Helper for retries
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const generateClarifyingQuestions = async (input: AgentInput): Promise<ClarificationQuestionsResponse> => {
-    const { prompt, apiKey, model } = input;
-    const ai = new GoogleGenAI({ apiKey });
-
-    const response = await ai.models.generateContent({
-        model,
-        contents: `User's goal: "${prompt}"`,
-        config: {
-            systemInstruction: clarificationInstruction,
-            responseMimeType: "application/json",
-            responseSchema: clarificationSchema
-        }
-    });
-    return JSON.parse(response.text.trim()) as ClarificationQuestionsResponse;
+const mapMessagesToGeminiHistory = (messages: Message[]) => {
+  return messages.map(msg => ({
+    role: msg.sender === 'user' ? 'user' : 'model' as 'user' | 'model',
+    parts: [{ text: msg.text }],
+  })).filter(msg => msg.parts[0].text.trim() !== '');
 };
 
-const generatePlan = async (input: AgentInput): Promise<PlanResponse> => {
-    const { prompt, answers, apiKey, model } = input;
+export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
+    const { project, chat, prompt, apiKey, model, history } = input;
     const ai = new GoogleGenAI({ apiKey });
-    const maxRetries = 3;
-    let lastError: Error | null = null;
 
-    let fullPrompt = `User request: "${prompt}"`;
-    if (answers) {
-        fullPrompt += "\n\nUser's answers to clarifying questions:\n" + answers.map((a, i) => `${i + 1}. ${a}`).join("\n");
-    }
+    const geminiHistory = mapMessagesToGeminiHistory(history);
+    
+    // Add current memory to the prompt for context
+    const contextPrompt = `Current Project Memory:\n"""\n${project.project_memory || 'This project does not have a memory yet.'}\n"""\n\nUser request: "${prompt}"`;
+    const contents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-            const response = await ai.models.generateContent({
-                model,
-                contents: fullPrompt,
-                config: {
-                    systemInstruction: planGenerationInstruction,
-                    responseMimeType: "application/json",
-                    responseSchema: planSchema
+    try {
+        const response = await ai.models.generateContent({
+            model,
+            contents: contents,
+            config: {
+                systemInstruction: memoryCreationInstruction,
+                responseMimeType: "application/json",
+                responseSchema: planAgentSchema,
+            }
+        });
+
+        const agentResponse = JSON.parse(response.text.trim()) as AgentResponse;
+
+        if (agentResponse.projectMemory) {
+            const projectMemory = agentResponse.projectMemory;
+            const confirmationMessage: AgentOutput[0] = {
+                project_id: project.id,
+                chat_id: chat.id,
+                sender: 'ai',
+                text: "Got it. I've updated the project's memory with our new plan. You can now use Chat mode for general questions or Build mode to start creating features, and I'll remember this context.",
+            };
+
+            return {
+                messages: [confirmationMessage],
+                projectUpdate: {
+                    project_memory: projectMemory
                 }
-            });
-            return JSON.parse(response.text.trim()) as PlanResponse;
-        } catch (error) {
-            lastError = error as Error;
-            console.error(`Attempt ${attempt} failed for plan generation:`, error);
-            if (attempt < maxRetries) {
-                await delay(Math.pow(2, attempt) * 1000);
-            }
+            };
+        } else if (agentResponse.responseText) {
+            const conversationalMessage: AgentOutput[0] = {
+                project_id: project.id,
+                chat_id: chat.id,
+                sender: 'ai',
+                text: agentResponse.responseText,
+            };
+            return { messages: [conversationalMessage] };
+        } else {
+             throw new Error("The AI returned an unexpected response format.");
         }
-    }
-    const errorMessage = lastError instanceof Error ? lastError.message : "An unknown error occurred.";
-    throw new Error(`AI service unavailable after multiple retries. Details: ${errorMessage}`);
-};
 
-export const runPlanAgent = async (input: AgentInput): Promise<AgentOutput> => {
-    const { project, chat, prompt } = input;
-
-    // If answers are provided, skip asking questions and generate the plan directly.
-    if (input.answers) {
-        const planResponse = await generatePlan(input);
-        const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
-        const planMessage: AgentOutput[0] = {
+    } catch (error) {
+        console.error("Error in runPlanAgent:", error);
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        const fallbackMessage: AgentOutput[0] = {
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
-            text: planResponse.introduction,
-            plan: {
-                title: planResponse.title,
-                features: planResponse.features,
-                mermaidGraph: planResponse.mermaidGraph,
-                tasks: planTasks,
-                isComplete: false,
-            }
+            text: `I'm sorry, but I encountered an error while trying to manage the project memory. (Error: ${errorMessage})`
         };
-        return [planMessage];
-    }
-
-    // Otherwise, start by asking clarifying questions.
-    const questionResponse = await generateClarifyingQuestions(input);
-
-    if (questionResponse.questions && questionResponse.questions.length > 0) {
-        // If there are questions, return a clarification message
-        const clarificationMessage: AgentOutput[0] = {
-            project_id: project.id,
-            chat_id: chat.id,
-            sender: 'ai',
-            text: "Before I create a plan, I have a few questions to make sure I build exactly what you need:",
-            clarification: {
-                prompt: prompt,
-                questions: questionResponse.questions,
-            }
-        };
-        return [clarificationMessage];
-    } else {
-        // If no questions are needed, generate the plan immediately
-        const planResponse = await generatePlan(input);
-        const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
-        const planMessage: AgentOutput[0] = {
-            project_id: project.id,
-            chat_id: chat.id,
-            sender: 'ai',
-            text: planResponse.introduction,
-            plan: {
-                title: planResponse.title,
-                features: planResponse.features,
-                mermaidGraph: planResponse.mermaidGraph,
-                tasks: planTasks,
-                isComplete: false,
-            }
-        };
-        return [planMessage];
+        return { messages: [fallbackMessage] };
     }
 };

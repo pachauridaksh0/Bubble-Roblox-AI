@@ -1,11 +1,10 @@
 
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { LeftSidebar } from './LeftSidebar';
 import { ChatView } from '../chat/ChatView';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { TopBar } from '../dashboard/TopBar';
-import { Project, ProjectPlatform, Message, Chat } from '../../types';
+import { Project, ProjectPlatform, Message, Chat, ChatMode } from '../../types';
 import { NewProjectModal } from '../dashboard/NewProjectModal';
 import { ProjectSettingsModal } from '../dashboard/ProjectSettingsModal';
 import { SettingsPage } from '../pages/SettingsPage';
@@ -13,6 +12,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { getProjects, createProject, getMessages, getChatsForProject, createChat as createDbChat, updateChat as updateDbChat, updateProject as updateDbProject } from '../../services/databaseService';
 import { ImpersonationBanner } from '../admin/ImpersonationBanner';
 import { WebAppPreview } from '../preview/WebAppPreview';
+import { NewChatModal } from '../chat/NewChatModal';
 
 type View = 'dashboard' | 'project' | 'settings';
 
@@ -29,6 +29,7 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
   const [isNewProjectModalOpen, setNewProjectModalOpen] = useState(false);
+  const [isNewChatModalOpen, setNewChatModalOpen] = useState(false);
   const [isProjectSettingsModalOpen, setProjectSettingsModalOpen] = useState(false);
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -39,7 +40,25 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
   const [searchResultIndices, setSearchResultIndices] = useState<number[]>([]);
   const [currentSearchResultIndex, setCurrentSearchResultIndex] = useState(0);
 
-  const activePlan = [...messages].reverse().find(m => m.plan)?.plan || null;
+  // State for managing the live preview panel visibility
+  const [isLivePreviewVisible, setIsLivePreviewVisible] = useState(false);
+
+  // Determines if a preview is possible (Web App with generated HTML code)
+  const canShowPreview = useMemo(() => {
+    if (view !== 'project' || activeProject?.platform !== 'Web App') return false;
+    // Check for a plan with at least one completed task that has HTML code.
+    return messages.some(m => 
+      m.plan?.tasks?.some(t => 
+        t.status === 'complete' && t.code && t.code.trim().toLowerCase().startsWith('<!doctype html')
+      )
+    );
+  }, [view, activeProject, messages]);
+  
+  // Effect to set the preview's visibility. It will be open by default if it can be shown.
+  useEffect(() => {
+    setIsLivePreviewVisible(canShowPreview);
+  }, [canShowPreview]);
+
   
   // Effect to fetch initial projects and subscribe to real-time updates
   useEffect(() => {
@@ -103,6 +122,8 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
           setChats(projectChats);
           if (projectChats.length > 0 && !activeChat) {
             setActiveChat(projectChats[0]);
+          } else if (projectChats.length === 0) {
+            setActiveChat(null);
           }
         } catch (error) {
           console.error("Failed to fetch chats:", error instanceof Error ? error.message : String(error));
@@ -141,11 +162,11 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
   const handleCreateProject = async (name: string, platform: ProjectPlatform) => {
     if (!user || !supabase) return;
     try {
-        const { project: newProject, chat: newChat } = await createProject(supabase, user.id, name, platform);
+        const newProject = await createProject(supabase, user.id, name, platform);
         setProjects(prevProjects => [newProject, ...prevProjects]);
         setActiveProject(newProject);
-        setChats([newChat]);
-        setActiveChat(newChat);
+        setChats([]);
+        setActiveChat(null);
         setView('project');
     } catch (error) {
         console.error("Failed to create project", error);
@@ -153,29 +174,50 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
     }
   };
 
-  const handleCreateChat = async () => {
+  const handleCreateChat = async (chatName: string, mode: ChatMode) => {
     if (!activeProject || !user || !supabase) return;
     try {
-      const newChat = await createDbChat(supabase, activeProject.id, user.id, "New Chat", 'chat');
+      const newChat = await createDbChat(supabase, activeProject.id, user.id, chatName, mode);
       setChats(prev => [...prev, newChat]);
       setActiveChat(newChat);
     } catch (error) {
       console.error("Failed to create new chat:", error instanceof Error ? error.message : String(error));
+      throw error;
     }
   };
 
-  const handleUpdateChat = async (chatId: string, updates: Partial<Chat>) => {
+  const handleUpdateChat = useCallback(async (chatId: string, updates: Partial<Chat>) => {
     if (!supabase) return;
+
+    // Optimistically update the UI
+    setChats(prevChats =>
+      prevChats.map(c => (c.id === chatId ? { ...c, ...updates } : c))
+    );
+    setActiveChat(prevActiveChat =>
+      prevActiveChat?.id === chatId ? { ...prevActiveChat, ...updates } : prevActiveChat
+    );
+
     try {
-      const updatedChat = await updateDbChat(supabase, chatId, updates);
-      setChats(prev => prev.map(c => c.id === chatId ? updatedChat : c));
-      if (activeChat?.id === chatId) {
-        setActiveChat(updatedChat);
-      }
+      // The DB function returns the fully updated chat object, which we use to re-sync state
+      const updatedChatFromDb = await updateDbChat(supabase, chatId, updates);
+      // Re-sync state with the source of truth from the DB
+      setChats(prev => prev.map(c => c.id === chatId ? updatedChatFromDb : c));
+      setActiveChat(prev => (prev?.id === chatId ? updatedChatFromDb : prev));
     } catch (error) {
-      console.error("Failed to update chat:", error);
+      console.error("Failed to update chat, UI may be out of sync.", error);
+      // Note: A full rollback is complex with optimistic updates. A common strategy is to
+      // show an error and prompt the user to refresh, or re-fetch data.
+      // For simplicity here, we're logging the error and the optimistic update remains.
     }
-  };
+  }, [supabase]);
+  
+  const handleUpdateActiveChat = useCallback((updates: Partial<Chat>) => {
+    if (activeChat) {
+        handleUpdateChat(activeChat.id, updates);
+    } else {
+        console.warn('No active chat to update.');
+    }
+  }, [activeChat, handleUpdateChat]);
 
   const handleUpdateProject = async (projectId: string, updates: Partial<Project>) => {
     if (!supabase) return;
@@ -186,8 +228,17 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
             setActiveProject(updatedProject);
         }
     } catch (error) {
-        console.error("Failed to update project", error);
+        // Error is now handled by the calling component (e.g., ChatView or Settings Modal)
         throw error;
+    }
+  };
+
+  const handleActiveProjectUpdate = async (updates: Partial<Project>) => {
+    if (activeProject) {
+        // Optimistically update the active project state for immediate UI feedback
+        setActiveProject(prev => prev ? { ...prev, ...updates } : null);
+        // Persist the changes to the database
+        await handleUpdateProject(activeProject.id, updates);
     }
   };
   
@@ -197,14 +248,15 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
               if (activeProject && activeChat) {
                   return (
                     <ChatView 
-                      key={activeChat.id}
+                      key={`${activeChat.id}-${activeChat.mode}`}
                       project={activeProject} 
                       chat={activeChat}
                       geminiApiKey={geminiApiKey}
                       messages={messages}
                       isLoadingHistory={isLoadingMessages}
                       setMessages={setMessages}
-                      onChatUpdate={handleUpdateChat}
+                      onChatUpdate={handleUpdateActiveChat}
+                      onActiveProjectUpdate={handleActiveProjectUpdate}
                       searchQuery={searchQuery}
                       onSearchResultsChange={setSearchResultIndices}
                       currentSearchResultMessageIndex={searchResultIndices[currentSearchResultIndex] ?? -1}
@@ -262,10 +314,11 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
         chats={chats}
         activeChatId={activeChat?.id}
         onSelectChat={setActiveChat}
-        onCreateChat={handleCreateChat}
+        onNewChatClick={() => setNewChatModalOpen(true)}
         onUpdateChat={handleUpdateChat}
         onSettingsClick={handleGoToSettings}
         isAdminView={false}
+        isCollapsed={isLivePreviewVisible}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         {isImpersonating && <ImpersonationBanner />}
@@ -280,13 +333,18 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
             currentSearchResultIndex={currentSearchResultIndex}
             onNextSearchResult={handleNextSearchResult}
             onPrevSearchResult={handlePrevSearchResult}
+            canShowPreview={canShowPreview}
+            isLivePreviewVisible={isLivePreviewVisible}
+            onToggleLivePreview={() => setIsLivePreviewVisible(prev => !prev)}
         />
         <main className="flex-1 flex overflow-hidden">
           <div className="flex-1 overflow-y-auto">
             {renderContent()}
           </div>
-          {view === 'project' && activeProject?.platform === 'Web App' && (
-            <WebAppPreview messages={messages} />
+          {isLivePreviewVisible && (
+            <WebAppPreview 
+              messages={messages} 
+            />
           )}
         </main>
       </div>
@@ -294,6 +352,13 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
         isOpen={isNewProjectModalOpen}
         onClose={() => setNewProjectModalOpen(false)}
         onCreateProject={handleCreateProject}
+        isAdmin={isAdmin}
+      />
+      <NewChatModal
+        isOpen={isNewChatModalOpen}
+        onClose={() => setNewChatModalOpen(false)}
+        onCreateChat={handleCreateChat}
+        existingChatCount={chats.length}
         isAdmin={isAdmin}
       />
       <ProjectSettingsModal

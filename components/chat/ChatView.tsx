@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Message, Task, Project, Chat, ChatMode } from '../../types';
 import { ChatMessage } from './ChatMessage';
@@ -11,6 +13,7 @@ import { runAgent } from '../../agents';
 import { generateCodeForTask } from '../../agents/build/codeGenerator';
 import { NEW_CHAT_NAME } from '../../constants';
 import { InitialPromptView } from './InitialPromptView';
+import { useToast } from '../../hooks/useToast';
 
 
 interface ChatViewProps {
@@ -20,7 +23,8 @@ interface ChatViewProps {
   messages: Message[];
   isLoadingHistory: boolean;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  onChatUpdate: (chatId: string, updates: Partial<Chat>) => void;
+  onChatUpdate: (updates: Partial<Chat>) => void;
+  onActiveProjectUpdate: (updates: Partial<Project>) => Promise<void>;
   searchQuery: string;
   onSearchResultsChange: (indices: number[]) => void;
   currentSearchResultMessageIndex: number;
@@ -35,12 +39,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
     isLoadingHistory,
     setMessages,
     onChatUpdate,
+    onActiveProjectUpdate,
     searchQuery,
     onSearchResultsChange,
     currentSearchResultMessageIndex,
     isAdmin,
 }) => {
   const { user, supabase } = useAuth();
+  const { addToast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [isPlanExecuting, setIsPlanExecuting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -134,8 +140,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || !supabase || !user) return;
     
-    const isNewChat = chat.name === NEW_CHAT_NAME;
+    const isNewChat = chat.name === NEW_CHAT_NAME && messages.length === 0;
 
+    // 1. Save and display user message
     const userMessage: Omit<Message, 'id' | 'created_at'> = {
       project_id: project.id,
       chat_id: chat.id,
@@ -143,24 +150,42 @@ export const ChatView: React.FC<ChatViewProps> = ({
       text,
       sender: 'user',
     };
-    
     const savedUserMessage = await addMessage(supabase, userMessage);
     setMessages(prev => [...prev, savedUserMessage]);
     setIsLoading(true);
 
-    // AI Naming Logic
+    // 2. AI Naming Logic for new chats
     if (isNewChat) {
         try {
             const title = await generateChatTitle(text, geminiApiKey);
-            onChatUpdate(chat.id, { name: title });
+            onChatUpdate({ name: title });
         } catch (e) {
             console.error("Failed to generate chat title", e);
-            // Fail silently, user can rename manually
         }
     }
 
+    // 3. Prepare for AI response (streaming or otherwise)
+    const tempId = `temp-ai-${Date.now()}`;
+    // Add a placeholder message for the AI response
+    setMessages(prev => [...prev, {
+        id: tempId,
+        project_id: project.id,
+        chat_id: chat.id,
+        text: '',
+        sender: 'ai',
+    }]);
+
+    const onStreamChunk = (chunk: string) => {
+        setMessages(prev =>
+            prev.map(m =>
+                m.id === tempId ? { ...m, text: m.text + chunk } : m
+            )
+        );
+    };
+
     try {
-        const agentOutput = await runAgent({
+        // 4. Run the agent
+        const { messages: agentMessages, projectUpdate } = await runAgent({
             prompt: text,
             apiKey: geminiApiKey,
             model: project.default_model,
@@ -168,12 +193,33 @@ export const ChatView: React.FC<ChatViewProps> = ({
             chat,
             user,
             supabase,
+            history: messages,
+            onStreamChunk,
         });
 
-        // Save AI responses and update UI
-        for (const messageContent of agentOutput) {
+        // 5. Save final AI responses and update UI
+        for (const messageContent of agentMessages) {
             const savedAiMessage = await addMessage(supabase, messageContent);
-            setMessages(prev => [...prev, savedAiMessage]);
+            // Replace the temporary message with the final, saved one from the DB
+            setMessages(prev => prev.map(m => m.id === tempId ? savedAiMessage : m));
+        }
+
+        // 6. Handle any project-level updates (like saving a memory)
+        if (projectUpdate) {
+            try {
+                await onActiveProjectUpdate(projectUpdate);
+            } catch (updateError) {
+                const errorMessage = updateError instanceof Error ? updateError.message : String(updateError);
+                // Log a more informative message that clarifies the error is handled.
+                console.warn(`Handled project update error: ${errorMessage}`, { originalError: updateError });
+                
+                // Be specific about the likely cause
+                if (errorMessage.toLowerCase().includes('project_memory')) {
+                    addToast("Failed to save project memory. Your database schema may be out of date.", "error");
+                } else {
+                    addToast(`Failed to update project: ${errorMessage}`, "error");
+                }
+            }
         }
 
     } catch (e) {
@@ -186,7 +232,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
             sender: 'ai',
         };
         const savedMessage = await addMessage(supabase, errorMessage);
-        setMessages(prev => [...prev, savedMessage]);
+        setMessages(prev => prev.map(m => m.id === tempId ? savedMessage : m));
     } finally {
         setIsLoading(false);
     }
@@ -207,7 +253,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       setIsLoading(true);
 
       try {
-        const agentOutput = await runAgent({
+        const historyUpToClarification = messages.slice(0, messageIndex + 1);
+        const { messages: agentMessages, projectUpdate } = await runAgent({
             prompt: originalPrompt,
             answers: answers,
             apiKey: geminiApiKey,
@@ -216,11 +263,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
             chat,
             user,
             supabase,
+            history: historyUpToClarification,
         });
 
-        for (const messageContent of agentOutput) {
+        for (const messageContent of agentMessages) {
             const savedAiMessage = await addMessage(supabase, messageContent);
             setMessages(prev => [...prev, savedAiMessage]);
+        }
+        
+        if (projectUpdate) {
+            await onActiveProjectUpdate(projectUpdate);
         }
       } catch (e) {
          console.error("Agent execution error after clarification:", e);
@@ -238,31 +290,27 @@ export const ChatView: React.FC<ChatViewProps> = ({
       }
   }
 
-  if (isLoadingHistory) {
-      return (
-        <div className="flex items-center justify-center h-full">
-            <svg className="animate-spin h-8 w-8 text-primary-start" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-        </div>
-      );
-  }
-
-  if (messages.length === 0 && !isLoadingHistory) {
-    return (
-      <InitialPromptView
-        onSendMessage={handleSendMessage}
-        onChatUpdate={(updates) => onChatUpdate(chat.id, updates)}
-        currentMode={chat.mode}
-        isAdmin={isAdmin}
-      />
-    );
-  }
-
   return (
     <div className="flex flex-col h-full bg-bg-primary">
       <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
+        {isLoadingHistory && (
+            <div className="flex items-center justify-center h-full">
+                <svg className="animate-spin h-8 w-8 text-primary-start" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+        )}
+
+        {messages.length === 0 && !isLoadingHistory && (
+          <InitialPromptView
+            onSendMessage={handleSendMessage}
+            onChatUpdate={onChatUpdate}
+            currentMode={chat.mode}
+            isAdmin={isAdmin}
+          />
+        )}
+
         <AnimatePresence initial={false}>
           {messages.map((msg, index) => (
             <div key={msg.id} ref={el => { messageRefs.current[index] = el; }}>
@@ -294,7 +342,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
         chat={chat}
-        onChatUpdate={(updates) => onChatUpdate(chat.id, updates)}
+        onChatUpdate={onChatUpdate}
         isAdmin={isAdmin}
       />
     </div>

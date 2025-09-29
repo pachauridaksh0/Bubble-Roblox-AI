@@ -1,51 +1,80 @@
+
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { XMarkIcon, ExclamationTriangleIcon, BoltIcon, CpuChipIcon } from '@heroicons/react/24/solid';
+import { XMarkIcon, ExclamationTriangleIcon, ChatBubbleLeftEllipsisIcon, SparklesIcon, CpuChipIcon, PuzzlePieceIcon, AcademicCapIcon } from '@heroicons/react/24/solid';
+import { ChatMode } from '../../types';
 
 interface NewChatModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreateChat: (name: string, model: string) => Promise<void>;
+  onCreateChat: (name: string, mode: ChatMode) => Promise<void>;
   existingChatCount: number;
+  isAdmin: boolean;
 }
 
-// FIX: Add an interface for model objects to make the `disabled` property optional.
-// This resolves TypeScript errors when accessing `model.disabled` later in the component.
-interface ModelInfo {
-    id: string;
+interface AgentModeInfo {
+    id: ChatMode;
     name: string;
     description: string;
-    icon: JSX.Element;
+    // FIX: Changed JSX.Element to React.ReactElement to resolve namespace error.
+    icon: React.ReactElement;
     disabled?: boolean;
 }
 
-const models: ModelInfo[] = [
-    { 
-        id: 'gemini-2.5-flash', 
-        name: 'Gemini 2.5 Flash', 
-        description: 'Fast, multimodal, and cost-effective for most tasks.', 
-        icon: <BoltIcon className="w-6 h-6 text-white"/> 
+// FIX: Changed type to AgentModeInfo[] to allow access to optional 'disabled' property.
+const agentModes: AgentModeInfo[] = [
+    {
+      id: 'chat',
+      name: 'Bubble Chat',
+      description: 'For conversational chat and quick questions.',
+      icon: <ChatBubbleLeftEllipsisIcon className="w-6 h-6 text-white" />,
     },
-    // Example of a future disabled option
-    // { 
-    //     id: 'gemini-pro', 
-    //     name: 'Gemini Pro', 
-    //     description: 'Powerful model for complex reasoning.', 
-    //     icon: <CpuChipIcon className="w-6 h-6 text-white"/>, 
-    //     disabled: true 
-    // },
+    {
+      id: 'plan',
+      name: 'Bubble Memory',
+      description: "Create and update the project's long-term memory.",
+      icon: <AcademicCapIcon className="w-6 h-6 text-white" />,
+    },
+    {
+      id: 'build',
+      name: 'Bubble Build',
+      description: 'Generate step-by-step build plans from memory.',
+      icon: <SparklesIcon className="w-6 h-6 text-white" />,
+    },
+    {
+      id: 'thinker',
+      name: 'Bubble Thinker',
+      description: 'Get multiple perspectives on a problem.',
+      icon: <CpuChipIcon className="w-6 h-6 text-white" />,
+    },
+    {
+      id: 'super_agent',
+      name: 'Bubble Max',
+      description: 'An advanced agent for complex, multi-step tasks.',
+      icon: <PuzzlePieceIcon className="w-6 h-6 text-white" />,
+    },
 ];
 
-export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onCreateChat, existingChatCount }) => {
+const proMaxAgent: AgentModeInfo = {
+    id: 'pro_max',
+    name: 'Bubble Pro Max',
+    description: 'Developer-only agent for expert-level architecture.',
+    icon: <AcademicCapIcon className="w-6 h-6 text-white" />,
+}
+
+
+export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onCreateChat, existingChatCount, isAdmin }) => {
   const [chatName, setChatName] = useState('');
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
+  const [selectedMode, setSelectedMode] = useState<ChatMode>('chat');
   const [isCreating, setIsCreating] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
+  
+  const availableModes = isAdmin ? [...agentModes, proMaxAgent] : agentModes;
   
   useEffect(() => {
     if (isOpen) {
         setChatName(`Chat ${existingChatCount + 1}`);
-        setSelectedModel('gemini-2.5-flash');
+        setSelectedMode('chat');
         setIsCreating(false);
         setCreationError(null);
     }
@@ -53,12 +82,12 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onC
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatName.trim() || !selectedModel || isCreating) return;
+    if (!chatName.trim() || !selectedMode || isCreating) return;
 
     setIsCreating(true);
     setCreationError(null);
     try {
-      await onCreateChat(chatName, selectedModel);
+      await onCreateChat(chatName, selectedMode);
       onClose();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
@@ -84,7 +113,7 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onC
             </button>
 
             <h2 className="text-2xl font-bold text-white mb-2">New Chat</h2>
-            <p className="text-gray-400 mb-6">Start a new conversation with a specific AI model.</p>
+            <p className="text-gray-400 mb-6">Start a new conversation with a specific AI agent.</p>
             
             <form onSubmit={handleSubmit}>
                 <div className="mb-4">
@@ -101,20 +130,20 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onC
                 </div>
 
                 <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-300 mb-2">AI Model</label>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Agent Mode</label>
                     <div className="space-y-3">
-                        {models.map(model => (
+                        {availableModes.map(mode => (
                             <div 
-                                key={model.id}
-                                onClick={() => !model.disabled && setSelectedModel(model.id)}
+                                key={mode.id}
+                                onClick={() => !mode.disabled && setSelectedMode(mode.id)}
                                 className={`p-3 border-2 rounded-lg flex items-start gap-4 transition-colors ${
-                                    selectedModel === model.id ? 'border-primary-start bg-primary-start/10' : 'border-white/20 bg-white/5'
-                                } ${model.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-white/40'}`}
+                                    selectedMode === mode.id ? 'border-primary-start bg-primary-start/10' : 'border-white/20 bg-white/5'
+                                } ${mode.disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-white/40'}`}
                             >
-                                <div className={`mt-1 flex-shrink-0 ${model.disabled ? 'text-gray-500' : ''}`}>{model.icon}</div>
+                                <div className={`mt-1 flex-shrink-0 ${mode.disabled ? 'text-gray-500' : ''}`}>{mode.icon}</div>
                                 <div>
-                                    <h3 className={`font-semibold ${model.disabled ? 'text-gray-400' : 'text-white'}`}>{model.name} {model.disabled && '(Coming Soon)'}</h3>
-                                    <p className="text-sm text-gray-400">{model.description}</p>
+                                    <h3 className={`font-semibold ${mode.disabled ? 'text-gray-400' : 'text-white'}`}>{mode.name} {mode.disabled && '(Coming Soon)'}</h3>
+                                    <p className="text-sm text-gray-400">{mode.description}</p>
                                 </div>
                             </div>
                         ))}
@@ -130,7 +159,7 @@ export const NewChatModal: React.FC<NewChatModalProps> = ({ isOpen, onClose, onC
 
                 <button
                   type="submit"
-                  disabled={!chatName.trim() || !selectedModel || isCreating}
+                  disabled={!chatName.trim() || !selectedMode || isCreating}
                   className="w-full h-[51px] flex items-center justify-center px-4 py-3 bg-gradient-to-r from-primary-start to-primary-end text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isCreating ? (

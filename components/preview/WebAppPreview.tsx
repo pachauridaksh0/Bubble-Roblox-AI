@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Message } from '../../types';
@@ -12,21 +13,27 @@ export const WebAppPreview: React.FC<WebAppPreviewProps> = ({ messages }) => {
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // FIX: Imported 'useMemo' from React to resolve reference error.
-  const combinedHtml = useMemo(() => {
-    // Concatenate code from all AI messages that contain it
-    const codeSnippets = messages
-      .filter(msg => msg.sender === 'ai' && msg.code)
-      .map(msg => msg.code);
+  const latestHtmlCode = useMemo(() => {
+    // Find the most recent message that contains a plan.
+    const planMessage = [...messages].reverse().find(msg => msg.plan);
+    const plan = planMessage?.plan;
 
-    if (codeSnippets.length === 0) {
-      return null;
+    if (!plan || !plan.tasks) {
+        return null;
     }
-    
-    // For simplicity, we'll just use the latest code snippet for the preview.
-    // A more advanced implementation might try to merge them.
-    return codeSnippets[codeSnippets.length - 1];
+
+    // Find the code from the most recently completed task that looks like an HTML document.
+    // We iterate in reverse to find the latest completed state.
+    for (let i = plan.tasks.length - 1; i >= 0; i--) {
+        const task = plan.tasks[i];
+        if (task.status === 'complete' && task.code && task.code.trim().toLowerCase().startsWith('<!doctype html')) {
+            return task.code;
+        }
+    }
+
+    return null; // No completed HTML tasks found yet.
   }, [messages]);
+
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -74,15 +81,17 @@ export const WebAppPreview: React.FC<WebAppPreviewProps> = ({ messages }) => {
         <div className="w-0.5 h-full bg-transparent group-hover:bg-primary-start transition-colors duration-200"></div>
       </div>
 
-      <div className="p-4 border-b border-white/10 flex-shrink-0 flex items-center gap-2">
-        <ComputerDesktopIcon className="w-5 h-5 text-gray-400" />
-        <h2 className="text-lg font-semibold text-white">Live Preview</h2>
+      <div className="p-4 border-b border-white/10 flex-shrink-0 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+            <ComputerDesktopIcon className="w-5 h-5 text-gray-400" />
+            <h2 className="text-lg font-semibold text-white">Live Preview</h2>
+        </div>
       </div>
 
       <div className="flex-1 bg-white overflow-hidden">
-        {combinedHtml ? (
+        {latestHtmlCode ? (
           <iframe
-            srcDoc={combinedHtml}
+            srcDoc={latestHtmlCode}
             title="Web App Preview"
             className="w-full h-full border-none"
             sandbox="allow-scripts allow-same-origin"
@@ -90,7 +99,7 @@ export const WebAppPreview: React.FC<WebAppPreviewProps> = ({ messages }) => {
         ) : (
           <div className="p-4 h-full flex items-center justify-center bg-gray-100">
             <p className="text-gray-500 text-center text-sm">
-              The live preview for your web app will appear here as the AI generates code.
+              The live preview for your web app will appear here as the AI generates code from a plan.
             </p>
           </div>
         )}
