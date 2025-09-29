@@ -24,3 +24,11 @@
     "vite": "^6.2.0"
   }
 }
+{
+  "homepage": "https://pachauridaksh0.github.io/Bubble-Roblox-AI",
+  "scripts": {
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
+  }
+}
+
