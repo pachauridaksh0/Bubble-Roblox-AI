@@ -3,6 +3,8 @@ import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
 import { clarificationInstruction, proMaxPlanGenerationInstruction } from './instructions';
 import { planSchema } from '../build/schemas'; // Re-use schemas
 import { Task, Message } from '../../types';
+import { getUserFriendlyError } from "../errorUtils";
+import { getMemoriesForContext } from "../../services/databaseService";
 
 interface ClarificationQuestionsResponse {
     questions: string[];
@@ -38,12 +40,13 @@ const proMaxClarificationSchema = {
     required: ["questions"]
 };
 
-const generateClarifyingQuestions = async (input: AgentInput): Promise<ClarificationQuestionsResponse> => {
-    const { prompt, apiKey, model, history, project } = input;
+const generateClarifyingQuestions = async (input: AgentInput): Promise<{ response: ClarificationQuestionsResponse, rawText: string }> => {
+    const { prompt, apiKey, model, history, supabase, user } = input;
     const ai = new GoogleGenAI({ apiKey });
 
     const geminiHistory = mapMessagesToGeminiHistory(history);
-    const contextPrompt = `PROJECT CONTEXT:\n${project.project_memory || 'No project context has been set yet.'}\n\nUSER REQUEST: "${prompt}"`;
+    const memoryContext = await getMemoriesForContext(supabase, user.id, input.project.id);
+    const contextPrompt = `MEMORY CONTEXT:\n${memoryContext}\n\nUSER REQUEST: "${prompt}"`;
     const contents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
 
     const response = await ai.models.generateContent({
@@ -52,19 +55,23 @@ const generateClarifyingQuestions = async (input: AgentInput): Promise<Clarifica
         config: {
             systemInstruction: clarificationInstruction,
             responseMimeType: "application/json",
-            responseSchema: proMaxClarificationSchema
+            responseSchema: proMaxClarificationSchema,
+            temperature: 0.5,
+            topP: 0.8,
         }
     });
-    return JSON.parse(response.text.trim()) as ClarificationQuestionsResponse;
+    const rawText = response.text.trim();
+    return { response: JSON.parse(rawText) as ClarificationQuestionsResponse, rawText };
 };
 
-const generatePlan = async (input: AgentInput): Promise<PlanResponse> => {
-    const { prompt, answers, apiKey, model, history, project } = input;
+const generatePlan = async (input: AgentInput): Promise<{ response: PlanResponse, rawText: string }> => {
+    const { prompt, answers, apiKey, model, history, supabase, user } = input;
     const ai = new GoogleGenAI({ apiKey });
     const maxRetries = 3;
     let lastError: Error | null = null;
 
-    let fullPrompt = `PROJECT CONTEXT:\n${project.project_memory || 'No project context has been set yet.'}\n\nUser request: "${prompt}"`;
+    const memoryContext = await getMemoriesForContext(supabase, user.id, input.project.id);
+    let fullPrompt = `MEMORY CONTEXT:\n${memoryContext}\n\nUser request: "${prompt}"`;
     if (answers) {
         fullPrompt += "\n\nUser's answers to clarifying questions:\n" + answers.map((a, i) => `${i + 1}. ${a}`).join("\n");
     }
@@ -80,10 +87,13 @@ const generatePlan = async (input: AgentInput): Promise<PlanResponse> => {
                 config: {
                     systemInstruction: proMaxPlanGenerationInstruction,
                     responseMimeType: "application/json",
-                    responseSchema: planSchema
+                    responseSchema: planSchema,
+                    temperature: 0.3,
+                    topP: 0.8,
                 }
             });
-            return JSON.parse(response.text.trim()) as PlanResponse;
+            const rawText = response.text.trim();
+            return { response: JSON.parse(rawText) as PlanResponse, rawText };
         } catch (error) {
             lastError = error as Error;
             console.error(`Attempt ${attempt} failed for pro_max plan generation:`, error);
@@ -100,59 +110,83 @@ export const runProMaxAgent = async (input: AgentInput): Promise<AgentExecutionR
     const { project, chat, prompt } = input;
     let messages: AgentOutput = [];
 
-    // If answers are provided, skip asking questions and generate the plan directly.
-    if (input.answers) {
-        const planResponse = await generatePlan(input);
-        const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
-        messages.push({
-            project_id: project.id,
-            chat_id: chat.id,
-            sender: 'ai',
-            text: planResponse.introduction,
-            plan: {
-                title: planResponse.title,
-                features: planResponse.features,
-                mermaidGraph: planResponse.mermaidGraph,
-                tasks: planTasks,
-                isComplete: false,
+    try {
+        // If answers are provided, skip asking questions and generate the plan directly.
+        if (input.answers) {
+            const { response: planResponse, rawText } = await generatePlan(input);
+            const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
+            const message: AgentOutput[0] = {
+                project_id: project.id,
+                chat_id: chat.id,
+                sender: 'ai',
+                text: planResponse.introduction,
+                plan: {
+                    title: planResponse.title,
+                    features: planResponse.features,
+                    mermaidGraph: planResponse.mermaidGraph,
+                    tasks: planTasks,
+                    isComplete: false,
+                },
+            };
+            if (input.profile?.role === 'admin') {
+                message.raw_ai_response = rawText;
             }
-        });
-        return { messages };
-    }
+            messages.push(message);
+            return { messages };
+        }
 
-    // Otherwise, start by asking clarifying questions.
-    const questionResponse = await generateClarifyingQuestions(input);
+        // Otherwise, start by asking clarifying questions.
+        const { response: questionResponse, rawText } = await generateClarifyingQuestions(input);
 
-    if (questionResponse.questions && questionResponse.questions.length > 0) {
-        // If there are questions, return a clarification message
-        messages.push({
+        if (questionResponse.questions && questionResponse.questions.length > 0) {
+            // If there are questions, return a clarification message
+            const message: AgentOutput[0] = {
+                project_id: project.id,
+                chat_id: chat.id,
+                sender: 'ai',
+                text: "Before I create a plan, I have a few technical questions to ensure the architecture is sound:",
+                clarification: {
+                    prompt: prompt,
+                    questions: questionResponse.questions,
+                },
+            };
+            if (input.profile?.role === 'admin') {
+                message.raw_ai_response = rawText;
+            }
+            messages.push(message);
+            return { messages };
+        } else {
+            // If no questions are needed, generate the plan immediately
+            const { response: planResponse, rawText: planRawText } = await generatePlan(input);
+            const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
+            const message: AgentOutput[0] = {
+                project_id: project.id,
+                chat_id: chat.id,
+                sender: 'ai',
+                text: planResponse.introduction,
+                plan: {
+                    title: planResponse.title,
+                    features: planResponse.features,
+                    mermaidGraph: planResponse.mermaidGraph,
+                    tasks: planTasks,
+                    isComplete: false,
+                },
+            };
+            if (input.profile?.role === 'admin') {
+                message.raw_ai_response = planRawText;
+            }
+            messages.push(message);
+            return { messages };
+        }
+    } catch (error) {
+        console.error("Error in runProMaxAgent:", error);
+        const errorMessage = getUserFriendlyError(error);
+        const fallbackMessage: AgentOutput[0] = {
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
-            text: "Before I create a plan, I have a few technical questions to ensure the architecture is sound:",
-            clarification: {
-                prompt: prompt,
-                questions: questionResponse.questions,
-            }
-        });
-        return { messages };
-    } else {
-        // If no questions are needed, generate the plan immediately
-        const planResponse = await generatePlan(input);
-        const planTasks: Task[] = planResponse.tasks.map(t => ({ text: t, status: 'pending' }));
-        messages.push({
-            project_id: project.id,
-            chat_id: chat.id,
-            sender: 'ai',
-            text: planResponse.introduction,
-            plan: {
-                title: planResponse.title,
-                features: planResponse.features,
-                mermaidGraph: planResponse.mermaidGraph,
-                tasks: planTasks,
-                isComplete: false,
-            }
-        });
-        return { messages };
+            text: errorMessage
+        };
+        return { messages: [fallbackMessage] };
     }
 };

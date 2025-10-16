@@ -1,5 +1,7 @@
 {
-  "name": "Bubble AI Chat",
+  "name": "Bubble AI Chat V2",
   "description": "An AI-powered chat application for Roblox developers, featuring a premium glassmorphism UI, code generation, and Bloxlink authentication.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

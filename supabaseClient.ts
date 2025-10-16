@@ -17,7 +17,11 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = 'https://ivwxzoqhzogchqrniapd.supabase.co' // <-- Replace with your Supabase URL
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml2d3h6b3Foem9nY2hxcm5pYXBkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNzcwMTYsImV4cCI6MjA3Mzk1MzAxNn0.VFnH911Muw2rX_1XhIyZL0_8IGce7dwW7VPS6mu2IGo' // <-- Replace with your Supabase Anon Key
 
-// FIX: Removed the obsolete check for placeholder credentials. This was causing a TypeScript
-// error because the actual credentials have been filled in, making the comparison always false.
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Explicitly set the db schema to 'public' to prevent client-side schema cache errors,
+// which manifest as "schema cache" or "relation does not exist" issues. This is a more
+// robust solution than a page refresh.
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  db: {
+    schema: 'public',
+  },
+});

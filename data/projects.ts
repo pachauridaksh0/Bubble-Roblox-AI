@@ -23,6 +23,8 @@ export const mockProjects: Project[] = [
     description: 'A simple obby game to learn the basics of Roblox development.',
     status: 'In Progress',
     platform: 'Roblox Studio',
+    // FIX: Added missing project_type property.
+    project_type: 'roblox_game',
     default_model: 'gemini-2.5-flash',
     updated_at: oneDayAgo.toISOString(),
     created_at: twoWeeksAgo.toISOString(),
@@ -34,6 +36,8 @@ export const mockProjects: Project[] = [
     description: 'A complex RPG system with inventory, quests, and combat.',
     status: 'In Progress',
     platform: 'Roblox Studio',
+    // FIX: Added missing project_type property.
+    project_type: 'roblox_game',
     default_model: 'gemini-2.5-flash',
     updated_at: fiveDaysAgo.toISOString(),
     created_at: fiveDaysAgo.toISOString(),
@@ -45,6 +49,8 @@ export const mockProjects: Project[] = [
     description: 'Testing advanced weapon mechanics and networking.',
     status: 'Archived',
     platform: 'Roblox Studio',
+    // FIX: Added missing project_type property.
+    project_type: 'roblox_game',
     default_model: 'gemini-2.5-flash',
     updated_at: twoWeeksAgo.toISOString(),
     created_at: twoWeeksAgo.toISOString(),

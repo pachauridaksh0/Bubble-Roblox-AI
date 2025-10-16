@@ -31,7 +31,8 @@ export const generateCodeForTask = async (task: string, platform: ProjectPlatfor
                     systemInstruction: codeGenerationInstruction,
                     responseMimeType: "application/json",
                     responseSchema: codeGenerationSchema(platform),
-                    temperature: 0.5,
+                    temperature: 0.3,
+                    topP: 0.8,
                 },
             });
 

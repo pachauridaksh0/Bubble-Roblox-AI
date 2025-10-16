@@ -7,12 +7,18 @@ import {
     UserCircleIcon,
     CreditCardIcon,
     PaintBrushIcon,
-    BeakerIcon
+    BeakerIcon,
+    CpuChipIcon,
+    CurrencyDollarIcon,
+    WrenchScrewdriverIcon,
 } from '@heroicons/react/24/solid';
 import { useAuth } from '../../contexts/AuthContext';
 import { validateApiKey } from '../../services/geminiService';
+import { MemoryDashboard } from '../settings/MemoryDashboard';
+import { BillingSettings } from '../settings/BillingSettings';
+import { ModelPreferences } from '../settings/ModelPreferences';
 
-type SettingsTab = 'profile' | 'account' | 'appearance' | 'accessibility' | 'apiKeys';
+type SettingsTab = 'profile' | 'account' | 'appearance' | 'memory' | 'apiKeys' | 'billing' | 'models';
 
 const GoogleIcon = () => (
     <svg className="w-6 h-6" viewBox="0 0 48 48">
@@ -108,16 +114,27 @@ const ProfileContent: React.FC = () => {
 }
 
 const AccountContent: React.FC = () => {
-    const { providers, signOut, signInWithGoogle, signInWithRoblox } = useAuth();
+    const { user, providers, signOut, signInWithGoogle } = useAuth();
+    const isEmailPasswordUser = user?.app_metadata.provider === 'email';
+    
     const providerDetails = [
         { name: 'google', Icon: GoogleIcon, isLinked: providers.includes('google'), action: signInWithGoogle, label: 'Google' },
-        { name: 'roblox', Icon: RobloxLogo, isLinked: providers.includes('roblox'), action: signInWithRoblox, label: 'Roblox' },
+        { name: 'roblox', Icon: RobloxLogo, isLinked: providers.includes('roblox'), action: () => alert("Roblox linking coming soon!"), label: 'Roblox' },
     ];
     return (
         <Section title="Account" description="Manage your linked accounts and session information.">
             <SectionCard>
                 <h3 className="text-lg font-semibold text-white mb-4">Linked Accounts</h3>
                  <div className="space-y-3">
+                    {isEmailPasswordUser && (
+                         <div className="flex items-center justify-between p-3 bg-black/20 rounded-md">
+                            <div className="flex items-center gap-4">
+                                <UserCircleIcon className="w-6 h-6 text-gray-400" />
+                                <span className="font-medium text-white">Email & Password</span>
+                            </div>
+                            <span className="text-sm text-success font-semibold px-3 py-1 bg-success/10 rounded-md">Primary</span>
+                        </div>
+                    )}
                     {providerDetails.map(({ name, Icon, isLinked, action, label }) => (
                         <div key={name} className="flex items-center justify-between p-3 bg-black/20 rounded-md">
                             <div className="flex items-center gap-4">
@@ -128,7 +145,7 @@ const AccountContent: React.FC = () => {
                                 )}
                             </div>
                             {isLinked ? <span className="text-sm text-success font-semibold px-3 py-1 bg-success/10 rounded-md">Linked</span>
-                            : <button onClick={action || undefined} disabled={!action} className="px-4 py-1.5 text-sm font-semibold bg-white/10 text-white rounded-md hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">Link Account</button>}
+                            : <button onClick={action} disabled={name === 'roblox'} className="px-4 py-1.5 text-sm font-semibold bg-white/10 text-white rounded-md hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">Link Account</button>}
                         </div>
                     ))}
                 </div>
@@ -160,8 +177,10 @@ const ApiKeysContent: React.FC = () => {
         if (!keyToUpdate.trim() || isUpdatingKey) return;
         setIsUpdatingKey(true); setKeyUpdateError(null); setKeyUpdateSuccess(false);
         try {
-            const isValid = await validateApiKey(keyToUpdate);
-            if (!isValid) throw new Error("The new API key appears to be invalid.");
+            const { success, message } = await validateApiKey(keyToUpdate);
+            if (!success) {
+                throw new Error(message || "The new API key appears to be invalid.");
+            }
             await saveGeminiApiKey(keyToUpdate);
             setKeyUpdateSuccess(true);
             setKeyToUpdate('');
@@ -240,18 +259,22 @@ export const SettingsPage: React.FC<{onBack: () => void}> = ({ onBack }) => {
     const navItems = [
         { id: 'profile', label: 'Public profile', icon: UserCircleIcon },
         { id: 'account', label: 'Account', icon: CreditCardIcon },
+        { id: 'billing', label: 'Billing & Usage', icon: CurrencyDollarIcon },
+        { id: 'models', label: 'Model Preferences', icon: WrenchScrewdriverIcon },
         { id: 'apiKeys', label: 'API Keys', icon: KeyIcon },
+        { id: 'memory', label: 'Memory', icon: CpuChipIcon },
         { id: 'appearance', label: 'Appearance', icon: PaintBrushIcon },
-        { id: 'accessibility', label: 'Accessibility', icon: BeakerIcon },
     ] as const;
 
     const renderContent = () => {
         switch(activeTab) {
             case 'profile': return <ProfileContent />;
             case 'account': return <AccountContent />;
+            case 'billing': return <BillingSettings />;
+            case 'models': return <ModelPreferences />;
             case 'apiKeys': return <ApiKeysContent />;
+            case 'memory': return <MemoryDashboard />;
             case 'appearance': return <PlaceholderContent title="Appearance" />;
-            case 'accessibility': return <PlaceholderContent title="Accessibility" />;
             default: return null;
         }
     }

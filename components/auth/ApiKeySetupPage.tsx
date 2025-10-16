@@ -1,5 +1,3 @@
-
-
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,19 +15,21 @@ export const ApiKeySetupPage: React.FC = () => {
         if (!geminiKey.trim() || isValidating) return;
         setIsValidating(true);
         setValidationError(null);
-        const isValid = await validateApiKey(geminiKey);
-        if (isValid) {
+
+        const { success, message } = await validateApiKey(geminiKey);
+
+        if (success) {
             try {
                 await saveGeminiApiKey(geminiKey);
                 // On success, AuthContext state changes and App.tsx navigates away.
             } catch (error) {
-                const errorMessage = (error && typeof error === 'object' && 'message' in error)
-                    ? (error as { message: string }).message
+                const errorMessage = error instanceof Error
+                    ? error.message
                     : 'Failed to save the API key. Please try again.';
                 setValidationError(errorMessage);
             }
         } else {
-            setValidationError('Invalid API Key. Please check your key and try again.');
+            setValidationError(message || 'Invalid API Key. Please check your key and try again.');
         }
         setIsValidating(false);
     };

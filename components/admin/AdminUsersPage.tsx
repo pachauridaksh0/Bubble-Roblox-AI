@@ -1,41 +1,125 @@
-
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { getAllProfiles, updateProfileForAdmin } from '../../services/databaseService';
-import { Profile } from '../../types';
+import { getAllProfiles, getProjects } from '../../services/databaseService';
+import { Profile, Project } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AdminConfirmationModal } from './AdminConfirmationModal';
 import {
     ArrowRightOnRectangleIcon,
-    ShieldCheckIcon,
-    NoSymbolIcon,
-    ShieldExclamationIcon,
-    ArrowUturnLeftIcon,
     MagnifyingGlassIcon,
     ExclamationTriangleIcon,
-    KeyIcon
+    KeyIcon,
+    XMarkIcon,
 } from '@heroicons/react/24/outline';
 
 
 const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
 
-type ActionType = 'ban' | 'unban' | 'admin' | 'unadmin' | 'view_key';
+type ActionType = 'view_key';
 
-const UserCard: React.FC<{ profile: Profile; onRequestAction: (actionType: ActionType, profile: Profile) => void }> = ({ profile, onRequestAction }) => {
+// User Details Modal Component
+const Stat: React.FC<{ label: string; value: string | number | null | undefined }> = ({ label, value }) => (
+    <div>
+        <dt className="text-sm font-medium text-gray-500">{label}</dt>
+        <dd className="mt-1 text-sm text-gray-200 break-all">{value || 'N/A'}</dd>
+    </div>
+);
+
+const AdminUserDetailsModal: React.FC<{ profile: Profile | null; onClose: () => void }> = ({ profile, onClose }) => {
+    const { supabase } = useAuth();
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (profile) {
+            const fetchUserData = async () => {
+                setIsLoading(true);
+                setError(null);
+                try {
+                    const userProjects = await getProjects(supabase, profile.id);
+                    setProjects(userProjects);
+                } catch (err) {
+                    setError('Failed to load user projects.');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchUserData();
+        }
+    }, [profile, supabase]);
+
+    if (!profile) return null;
+
+    return (
+        <AnimatePresence>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-bg-primary/50 backdrop-blur-md">
+                <motion.div
+                    initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                    transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                    className="w-full max-w-2xl max-h-[90vh] flex flex-col bg-bg-secondary/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl"
+                >
+                    <header className="flex-shrink-0 p-6 flex justify-between items-center border-b border-white/10">
+                        <div className="flex items-center gap-4">
+                            <img src={profile.avatar_url || FALLBACK_AVATAR_SVG} alt="Avatar" className="w-12 h-12 rounded-full bg-bg-tertiary" />
+                            <div>
+                                <h2 className="text-xl font-bold text-white">{profile.roblox_username}</h2>
+                                <p className="text-sm text-gray-400">User Details</p>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="p-2 text-gray-500 hover:text-white transition-colors">
+                            <XMarkIcon className="w-6 h-6" />
+                        </button>
+                    </header>
+                    
+                    <main className="flex-1 p-6 overflow-y-auto space-y-6">
+                        <section>
+                            <h3 className="text-lg font-semibold text-white mb-4">Profile Information</h3>
+                            <div className="p-4 bg-black/20 rounded-lg">
+                                <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+                                    <Stat label="Display Name" value={profile.roblox_username} />
+                                    <Stat label="User ID" value={profile.id} />
+                                    <Stat label="Avatar URL" value={profile.avatar_url} />
+                                    <Stat label="API Key Set" value={profile.gemini_api_key ? 'Yes' : 'No'} />
+                                </dl>
+                            </div>
+                        </section>
+                        
+                        <section>
+                             <h3 className="text-lg font-semibold text-white mb-4">User Projects ({projects.length})</h3>
+                             <div className="p-4 bg-black/20 rounded-lg">
+                                {isLoading ? (
+                                    <div className="text-center text-gray-400">Loading projects...</div>
+                                ) : error ? (
+                                    <div className="text-center text-red-400 flex items-center justify-center gap-2">
+                                        <ExclamationTriangleIcon className="w-5 h-5" /> {error}
+                                    </div>
+                                ) : projects.length > 0 ? (
+                                    <ul className="space-y-3">
+                                        {projects.map(p => (
+                                            <li key={p.id} className="p-3 bg-bg-tertiary rounded-md border border-white/10">
+                                                <p className="font-semibold text-white">{p.name}</p>
+                                                <p className="text-sm text-gray-400 line-clamp-1">{p.description}</p>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <div className="text-center text-gray-500">This user has not created any projects.</div>
+                                )}
+                             </div>
+                        </section>
+                    </main>
+                </motion.div>
+            </div>
+        </AnimatePresence>
+    );
+};
+
+// User Card Component
+const UserCard: React.FC<{ profile: Profile; onRequestAction: (actionType: ActionType, profile: Profile) => void; onViewDetails: (profile: Profile) => void; }> = ({ profile, onRequestAction, onViewDetails }) => {
     const { impersonateUser } = useAuth();
-
-    const { role, status, ban_reason } = profile;
-    const isBanned = status === 'banned';
-    const isAdmin = role === 'admin';
-
-    const handleToggleAdmin = () => {
-        onRequestAction(isAdmin ? 'unadmin' : 'admin', profile);
-    };
-
-    const handleToggleBan = () => {
-        onRequestAction(isBanned ? 'unban' : 'ban', profile);
-    };
 
     return (
         <motion.div
@@ -44,7 +128,8 @@ const UserCard: React.FC<{ profile: Profile; onRequestAction: (actionType: Actio
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className={`bg-bg-secondary rounded-xl p-4 border border-bg-tertiary flex flex-col transition-all duration-300 ${isBanned ? 'opacity-50 grayscale' : ''}`}
+            className={`bg-bg-secondary rounded-xl p-4 border border-bg-tertiary flex flex-col transition-all duration-300 cursor-pointer hover:border-primary-start`}
+            onClick={() => onViewDetails(profile)}
         >
             <div className="flex items-start gap-4 mb-4">
                 <img
@@ -58,54 +143,24 @@ const UserCard: React.FC<{ profile: Profile; onRequestAction: (actionType: Actio
                         ID: {profile.id.split('-')[0]}...
                     </p>
                 </div>
-                <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                    {isAdmin && !isBanned && (
-                         <div title="Administrator" className="flex-shrink-0 p-1.5 bg-primary-start/20 text-primary-start rounded-full">
-                            <ShieldCheckIcon className="w-5 h-5"/>
-                         </div>
-                    )}
-                    {isBanned && (
-                         <div title={`Banned: ${ban_reason || 'No reason provided.'}`} className="flex-shrink-0 p-1.5 bg-error/20 text-error rounded-full">
-                            <NoSymbolIcon className="w-5 h-5"/>
-                         </div>
-                    )}
-                </div>
             </div>
 
-            <div className="mt-auto grid grid-cols-4 gap-2 text-xs font-semibold">
+            <div className="mt-auto grid grid-cols-2 gap-2 text-xs font-semibold">
                 <button
-                    onClick={() => impersonateUser(profile)}
+                    onClick={(e) => { e.stopPropagation(); impersonateUser(profile); }}
                     title="Impersonate User"
-                    className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 text-gray-300 rounded-md hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isBanned}
+                    className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 text-gray-300 rounded-md hover:bg-white/10 hover:text-white transition-colors"
                 >
                     <ArrowRightOnRectangleIcon className="w-4 h-4" />
                     <span>View As</span>
                 </button>
                  <button
-                    onClick={() => onRequestAction('view_key', profile)}
+                    onClick={(e) => { e.stopPropagation(); onRequestAction('view_key', profile); }}
                     title="View API Key"
                     className="flex items-center justify-center gap-1.5 px-2 py-2 bg-white/5 text-gray-300 rounded-md hover:bg-white/10 hover:text-white transition-colors"
                 >
                     <KeyIcon className="w-4 h-4" />
-                    <span>Key</span>
-                </button>
-                <button
-                    onClick={handleToggleBan}
-                    title={isBanned ? 'Unban User' : 'Ban User'}
-                    className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-md transition-colors ${isBanned ? 'bg-success/10 text-success hover:bg-success/20' : 'bg-error/10 text-error hover:bg-error/20'}`}
-                >
-                    {isBanned ? <ArrowUturnLeftIcon className="w-4 h-4"/> : <NoSymbolIcon className="w-4 h-4"/>}
-                    <span>{isBanned ? 'Unban' : 'Ban'}</span>
-                </button>
-                 <button
-                    onClick={handleToggleAdmin}
-                    title={isAdmin ? 'Revoke Admin' : 'Make Admin'}
-                    className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isAdmin ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20' : 'bg-primary-start/10 text-primary-start hover:bg-primary-start/20'}`}
-                    disabled={isBanned}
-                >
-                    {isAdmin ? <ShieldExclamationIcon className="w-4 h-4"/> : <ShieldCheckIcon className="w-4 h-4"/>}
-                    <span>{isAdmin ? 'Revoke' : 'Admin'}</span>
+                    <span>View Key</span>
                 </button>
             </div>
         </motion.div>
@@ -122,6 +177,8 @@ export const AdminUsersPage: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalConfig, setModalConfig] = useState<any>(null);
     const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
+    const [viewingProfile, setViewingProfile] = useState<Profile | null>(null);
+
 
     const fetchProfiles = useCallback(async () => {
         try {
@@ -136,22 +193,17 @@ export const AdminUsersPage: React.FC = () => {
     }, [supabase]);
 
     useEffect(() => {
-        // Initial fetch
         fetchProfiles();
         
-        // Set up real-time subscription
         const channel = supabase
             .channel('profiles-realtime-admin')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'profiles' },
-                // On any change, refetch the entire list to ensure data is always fresh.
-                // This is more robust than trying to patch the state manually.
                 () => fetchProfiles()
             )
             .subscribe();
 
-        // Cleanup function to remove the subscription
         return () => {
             supabase.removeChannel(channel);
         };
@@ -160,40 +212,6 @@ export const AdminUsersPage: React.FC = () => {
     const handleRequestAction = (actionType: ActionType, profile: Profile) => {
         setSelectedProfile(profile);
         switch (actionType) {
-            case 'ban':
-                setModalConfig({
-                    title: `Ban ${profile.roblox_username}?`,
-                    message: 'Banned users will not be able to log in. You can provide a reason for the ban below, which will be visible to other admins.',
-                    confirmText: 'Yes, ban user',
-                    confirmClassName: 'bg-red-600 text-white hover:bg-red-700',
-                    needsReasonInput: true,
-                    initialReason: profile.ban_reason
-                });
-                break;
-            case 'unban':
-                setModalConfig({
-                    title: `Unban ${profile.roblox_username}?`,
-                    message: 'This will restore their access to the application. Their ban reason will be cleared.',
-                    confirmText: 'Yes, unban user',
-                    confirmClassName: 'bg-green-600 text-white hover:bg-green-700'
-                });
-                break;
-            case 'admin':
-                 setModalConfig({
-                    title: `Make ${profile.roblox_username} an admin?`,
-                    message: 'Administrators have access to all user data and administrative functions. This action cannot be undone easily.',
-                    confirmText: 'Yes, grant admin',
-                    confirmClassName: 'bg-indigo-600 text-white hover:bg-indigo-700'
-                });
-                break;
-            case 'unadmin':
-                 setModalConfig({
-                    title: `Revoke admin for ${profile.roblox_username}?`,
-                    message: 'This will remove their administrative privileges. They will revert to a standard user role.',
-                    confirmText: 'Yes, revoke admin',
-                    confirmClassName: 'bg-amber-600 text-white hover:bg-amber-700'
-                });
-                break;
             case 'view_key':
                 setModalConfig({
                     title: `${profile.roblox_username}'s API Key`,
@@ -219,28 +237,6 @@ export const AdminUsersPage: React.FC = () => {
             setModalConfig(null);
             return;
         }
-
-        let updates: Partial<Profile> = {};
-        if (modalConfig.title.includes('Ban')) {
-            updates = { status: 'banned', ban_reason: reason || null };
-        } else if (modalConfig.title.includes('Unban')) {
-            updates = { status: 'active', ban_reason: null };
-        } else if (modalConfig.title.includes('Make')) {
-            updates = { role: 'admin' };
-        } else if (modalConfig.title.includes('Revoke')) {
-            updates = { role: 'user' };
-        }
-
-        try {
-            // The realtime subscription will handle the UI update automatically after this query succeeds.
-            await updateProfileForAdmin(supabase, selectedProfile.id, updates);
-        } catch (err) {
-            alert(`Failed to update profile: ${err instanceof Error ? err.message : 'Unknown error'}`);
-        } finally {
-            setIsModalOpen(false);
-            setSelectedProfile(null);
-            setModalConfig(null);
-        }
     };
     
     const filteredProfiles = useMemo(() => {
@@ -264,8 +260,7 @@ export const AdminUsersPage: React.FC = () => {
                                 <div className="h-4 w-1/2 bg-bg-tertiary rounded"></div>
                             </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
-                            <div className="h-9 bg-bg-tertiary rounded-md"></div>
+                        <div className="grid grid-cols-2 gap-2">
                             <div className="h-9 bg-bg-tertiary rounded-md"></div>
                             <div className="h-9 bg-bg-tertiary rounded-md"></div>
                         </div>
@@ -311,7 +306,12 @@ export const AdminUsersPage: React.FC = () => {
                         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
                     >
                         {filteredProfiles.map(profile => (
-                            <UserCard key={profile.id} profile={profile} onRequestAction={handleRequestAction} />
+                            <UserCard 
+                                key={profile.id} 
+                                profile={profile} 
+                                onRequestAction={handleRequestAction} 
+                                onViewDetails={setViewingProfile}
+                            />
                         ))}
                     </motion.div>
                 ) : (
@@ -332,6 +332,11 @@ export const AdminUsersPage: React.FC = () => {
                 config={modalConfig}
                 onClose={() => setIsModalOpen(false)}
                 onConfirm={handleConfirmAction}
+            />
+
+            <AdminUserDetailsModal 
+                profile={viewingProfile}
+                onClose={() => setViewingProfile(null)}
             />
         </div>
     );

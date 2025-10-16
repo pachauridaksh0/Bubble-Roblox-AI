@@ -1,5 +1,5 @@
 import { SupabaseClient, User } from '@supabase/supabase-js';
-import { Project, Chat, Message } from '../types';
+import { Project, Chat, Message, WorkspaceMode, Profile } from '../types';
 
 export interface AgentInput {
     prompt: string;
@@ -8,8 +8,10 @@ export interface AgentInput {
     project: Project;
     chat: Chat;
     user: User;
+    profile: Profile | null;
     supabase: SupabaseClient;
     history: Message[];
+    workspaceMode: WorkspaceMode;
     // Optional, for when a plan is being generated from answers
     answers?: string[];
     // Optional callback for streaming responses

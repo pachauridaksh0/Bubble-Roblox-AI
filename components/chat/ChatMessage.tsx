@@ -1,13 +1,139 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Message, Task } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CodeBlock } from '../ui/CodeBlock';
 import { CheckCircleIcon, LightBulbIcon, CodeBracketSquareIcon, EyeIcon, ShareIcon, SparklesIcon } from '@heroicons/react/24/solid';
-// FIX: Imported `ArrowsPointingInIcon` to resolve a missing component error.
 import { CpuChipIcon, ExclamationTriangleIcon, ChevronDownIcon, ArrowsPointingOutIcon, XMarkIcon, PlusIcon, MinusIcon, ArrowPathIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { ClarificationForm } from './ClarificationForm';
 import { useToast } from '../../hooks/useToast';
+
+const ImageLoadingPlaceholder: React.FC = () => {
+    return (
+        <div className="relative aspect-square w-full max-w-md my-4 p-4 rounded-lg bg-black/20 border border-white/10 overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-tr from-bg-tertiary via-bg-secondary to-bg-tertiary animate-pulse"></div>
+            <div className="relative z-10 flex flex-col items-center justify-center h-full text-center">
+                <SparklesIcon className="w-10 h-10 text-primary-start/50 mb-3" />
+                <p className="font-semibold text-white/80">Generating Image...</p>
+                <p className="text-sm text-white/50">The AI is creating your visual, this may take a moment.</p>
+            </div>
+        </div>
+    );
+};
+
+// New Image Modal Component for viewing generated images
+const ImageModal: React.FC<{ src: string; onClose: () => void }> = ({ src, onClose }) => {
+    const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
+    const containerRef = useRef<HTMLDivElement>(null);
+    const panState = useRef({ isPanning: false, startX: 0, startY: 0 });
+
+    const clamp = (val: number, min: number, max: number) => Math.min(Math.max(val, min), max);
+
+    const handleWheel = (e: React.WheelEvent) => {
+        e.preventDefault();
+        if (!containerRef.current) return;
+    
+        const rect = containerRef.current.getBoundingClientRect();
+        const zoomIntensity = 0.1;
+        const newScale = clamp(transform.scale - e.deltaY * zoomIntensity * 0.1, 0.2, 5);
+    
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+    
+        const newX = mouseX - (mouseX - transform.x) * (newScale / transform.scale);
+        const newY = mouseY - (mouseY - transform.y) * (newScale / transform.scale);
+    
+        setTransform({ scale: newScale, x: newX, y: newY });
+    };
+
+    const handleMouseDown = (e: React.MouseEvent) => {
+        panState.current = {
+            isPanning: true,
+            startX: e.clientX - transform.x,
+            startY: e.clientY - transform.y,
+        };
+        if (containerRef.current) containerRef.current.style.cursor = 'grabbing';
+    };
+
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!panState.current.isPanning) return;
+        const newX = e.clientX - panState.current.startX;
+        const newY = e.clientY - panState.current.startY;
+        setTransform({ ...transform, x: newX, y: newY });
+    };
+
+    const handleMouseUp = () => {
+        panState.current.isPanning = false;
+        if (containerRef.current) containerRef.current.style.cursor = 'grab';
+    };
+
+    const zoom = (direction: number) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const zoomIntensity = 0.4;
+        const newScale = clamp(transform.scale + direction * zoomIntensity, 0.2, 5);
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const newX = centerX - (centerX - transform.x) * (newScale / transform.scale);
+        const newY = centerY - (centerY - transform.y) * (newScale / transform.scale);
+        setTransform({ scale: newScale, x: newX, y: newY });
+    };
+    
+    const resetTransform = () => setTransform({ scale: 1, x: 0, y: 0 });
+
+    return (
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+        >
+            <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 20 }}
+                className="relative w-full h-full bg-transparent flex items-center justify-center overflow-hidden"
+                onWheel={handleWheel}
+            >
+                {/* Close Button in corner */}
+                <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 bg-bg-secondary rounded-full hover:text-white transition-colors z-20">
+                    <XMarkIcon className="w-6 h-6" />
+                </button>
+                
+                {/* Image Container */}
+                <div
+                    ref={containerRef}
+                    className="w-full h-full flex items-center justify-center p-8"
+                    style={{ cursor: 'grab' }}
+                    onMouseDown={handleMouseDown}
+                >
+                    <img
+                        className="max-w-full max-h-full object-contain transition-transform duration-[50ms] ease-linear"
+                        src={src}
+                        alt="Enlarged generated content"
+                        style={{
+                            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+                        }}
+                    />
+                </div>
+
+                {/* Control Bubble */}
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 p-2 bg-bg-secondary rounded-full shadow-lg z-20">
+                     <button onClick={() => zoom(-1)} title="Zoom Out" className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                        <MinusIcon className="w-6 h-6" />
+                    </button>
+                    <button onClick={resetTransform} className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors" title="Reset View">
+                        <ArrowsPointingInIcon className="w-6 h-6" />
+                    </button>
+                    <button onClick={() => zoom(1)} title="Zoom In" className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-full transition-colors">
+                        <PlusIcon className="w-6 h-6" />
+                    </button>
+                </div>
+            </motion.div>
+        </div>
+    );
+};
+
 
 // New Modal Component for Mermaid Diagrams
 const MermaidModal: React.FC<{ svgContent: string; onClose: () => void }> = ({ svgContent, onClose }) => {
@@ -196,22 +322,17 @@ const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition
 
     useEffect(() => {
         const renderMermaid = async () => {
-            // Trim to handle empty or whitespace-only strings
             const trimmedGraphDef = graphDefinition ? graphDefinition.trim() : '';
             
             if (trimmedGraphDef && (window as any).mermaid) {
                 const { mermaidAPI } = (window as any).mermaid;
                 try {
-                    // 1. Validate the Mermaid syntax before attempting to render.
-                    // The parse function will throw an error if the syntax is invalid.
                     await mermaidAPI.parse(trimmedGraphDef);
-                    setError(''); // Clear previous errors if parse is successful
+                    setError('');
 
-                    // 2. If validation passes, render the SVG.
                     const { svg } = await mermaidAPI.render(`mermaid-graph-${Date.now()}`, trimmedGraphDef);
                     setSvgContent(svg);
                 } catch (e) {
-                    // This block now catches both parsing and rendering errors gracefully.
                     const errorMessage = "Could not render the visual plan. The diagram syntax returned by the AI appears to be invalid.";
                     console.error("Mermaid rendering error:", e);
                     setError(errorMessage);
@@ -219,10 +340,7 @@ const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition
                     addToast(errorMessage, 'error');
                 }
             } else {
-                // Handle cases where the AI provides no graph definition.
                 setSvgContent('');
-                // This is not an error, just an absence of a diagram. No need to show an error message.
-                // setError("The AI did not provide a visual plan for this step.");
             }
         };
         renderMermaid();
@@ -240,7 +358,6 @@ const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition
         );
     }
 
-    // Don't render anything if there's no content to prevent mermaid from erroring on empty divs
     if (!svgContent) {
         return <div className="p-4 text-center text-gray-500">Generating blueprint...</div>;
     }
@@ -315,7 +432,6 @@ const TaskStatusIcon: React.FC<{ status: Task['status'] }> = ({ status }) => {
             </div>
         );
     }
-    // 'complete' status icon is handled inside TaskRenderer
     return null;
 }
 
@@ -424,10 +540,9 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     const { plan } = message;
     if (!plan) return null;
 
-    // Graceful fallback for malformed/empty plans from the AI
     const isPlanEmpty = (!plan.features || plan.features.length === 0 || (plan.features.length === 1 && plan.features[0].includes("insufficient"))) && !plan.mermaidGraph;
     if (isPlanEmpty) {
-        return <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+        return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
     }
 
     const hasStartedExecution = plan.tasks.some(t => t.status !== 'pending');
@@ -435,7 +550,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     if (hasStartedExecution) {
         return (
             <>
-                <p className="px-5 py-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+                <p><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
                 <PlanExecutionRenderer plan={plan} />
             </>
         );
@@ -443,9 +558,9 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     
     return (
         <div className="space-y-4">
-            <p className="px-5 pt-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+            <p><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
             
-            <div className="mx-4 p-4 rounded-lg bg-black/20 border border-white/10">
+            <div className="p-4 rounded-lg bg-black/20 border border-white/10">
                 <h4 className="font-semibold text-white mb-2">I'll include the following features:</h4>
                 <ul className="space-y-1.5">
                     {plan.features.map((feature, index) => (
@@ -457,7 +572,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
                 </ul>
             </div>
             
-            <div className="mx-4 p-4 rounded-lg bg-black/20 border border-white/10">
+            <div className="p-4 rounded-lg bg-black/20 border border-white/10">
                  <h4 className="font-semibold text-white mb-2 flex items-center gap-2">
                     <ShareIcon className="w-5 h-5 text-primary-start/80"/>
                     Project Blueprint
@@ -474,7 +589,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
                  </div>
              </div>
             
-            <div className="px-4 pb-3">
+            <div className="pb-3">
                  <button
                     onClick={() => onExecutePlan(message.id)}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold bg-primary-start text-white rounded-lg shadow-lg hover:bg-primary-start/80 transition-all duration-150 ease-in-out transform hover:scale-[1.02] active:scale-95"
@@ -495,14 +610,13 @@ const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit:
         onClarificationSubmit(message.id, answers);
     }
 
-    // If answers are already provided, just show the text.
     if (clarification.answers) {
-        return <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+        return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
     }
 
     return (
         <div className="space-y-4">
-            <p className="px-5 pt-3"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+            <p><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
             <ClarificationForm 
                 questions={clarification.questions}
                 onSubmit={handleSubmit}
@@ -515,8 +629,7 @@ const ThinkerRenderer: React.FC<{ message: Message; searchQuery?: string }> = ({
     const [activeTab, setActiveTab] = useState<'final' | 'standing' | 'opposing'>('final');
     
     if (!message.standing_response || !message.opposing_response) {
-        // Fallback for when data is not available
-        return <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+        return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
     }
 
     const tabs = [
@@ -553,7 +666,7 @@ const ThinkerRenderer: React.FC<{ message: Message; searchQuery?: string }> = ({
 
     return (
         <div className="py-2">
-            <div className="flex border-b border-white/10 px-4">
+            <div className="flex border-b border-white/10">
                 {tabs.map(tab => (
                     <button 
                         key={tab.id}
@@ -564,7 +677,7 @@ const ThinkerRenderer: React.FC<{ message: Message; searchQuery?: string }> = ({
                     </button>
                 ))}
             </div>
-            <div className="p-4">
+            <div className="pt-4">
                  {renderContent()}
             </div>
         </div>
@@ -583,87 +696,96 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
 }) => {
   const isUser = message.sender === 'user';
   const [showRaw, setShowRaw] = useState(false);
-  const [isCodeExpanded, setIsCodeExpanded] = useState(false);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
 
   const variants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0 },
   };
-  
-  const containerClasses = [
-    'flex',
-    'flex-col',
-    isUser ? 'items-end' : 'items-start',
-    'transition-opacity duration-300',
-    isDimmed ? 'opacity-30' : 'opacity-100'
-  ].join(' ');
-  
-  const bubbleClasses = [
-      'rounded-2xl shadow-lg transition-all duration-200',
-      isUser
-        ? 'bg-gradient-to-br from-primary-start to-primary-end text-white'
-        : 'bg-bg-tertiary/50 backdrop-blur-md border border-white/10 text-gray-200',
-      isCurrentResult ? 'ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''
-  ].join(' ');
 
+  // User Message Bubble
+  if (isUser) {
+    return (
+        <motion.div
+          variants={variants}
+          initial="hidden"
+          animate="visible"
+          transition={{ duration: 0.3 }}
+          className={`flex justify-end mb-3 px-4 ${isDimmed ? 'opacity-30' : 'opacity-100'}`}
+        >
+            <div className={`bg-indigo-600 text-white rounded-2xl px-4 py-2 max-w-[60%] break-words shadow-md ${isCurrentResult ? 'ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''}`}>
+                <p className="text-sm whitespace-pre-wrap">
+                    <HighlightedText text={message.text} highlight={searchQuery} />
+                </p>
+            </div>
+        </motion.div>
+    );
+  }
+  
+  // AI Full-Width Response
   return (
     <motion.div
       variants={variants}
       initial="hidden"
       animate="visible"
       transition={{ duration: 0.3 }}
-      className={containerClasses}
+      className={`flex flex-col items-start transition-opacity duration-300 ${isDimmed ? 'opacity-30' : 'opacity-100'}`}
     >
-      <div className={`max-w-md lg:max-w-3xl px-1 w-full`}>
-        <div className={bubbleClasses}>
+        <div className={`w-full prose ${isCurrentResult ? 'rounded-lg ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''}`}>
             {showRaw ? (
                 <pre className="p-4 text-xs bg-black/30 rounded-lg overflow-x-auto">
                     {JSON.stringify(message, null, 2)}
                 </pre>
-            ) : message.standing_response ? (
-                <ThinkerRenderer message={message} searchQuery={searchQuery} />
-            ) : message.plan ? (
-                <PlanUIRenderer message={message} onExecutePlan={onExecutePlan} searchQuery={searchQuery} />
-            ) : message.clarification ? (
-                <ClarificationRenderer message={message} onClarificationSubmit={onClarificationSubmit} searchQuery={searchQuery}/>
+            ) : message.imageStatus === 'generating' ? (
+                <ImageLoadingPlaceholder />
             ) : (
-                <p className="px-5 py-3 whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery} /></p>
-            )}
-
-            {message.code && !showRaw && (
-              <>
-                <div className="border-t border-white/10 mx-4 mt-2"></div>
-                <div className="px-4 py-3">
-                    <button
-                        onClick={() => setIsCodeExpanded(!isCodeExpanded)}
-                        className="w-full flex justify-between items-center p-2 text-left bg-black/20 hover:bg-black/30 rounded-md transition-colors"
-                    >
-                        <div className="flex items-center space-x-2">
-                            <CodeBracketSquareIcon className="w-5 h-5 text-gray-400" />
-                            <span className="text-sm font-medium text-white">
-                                {isCodeExpanded ? 'Hide Code' : 'View Code'}
-                            </span>
-                        </div>
-                        <ChevronDownIcon className={`w-5 h-5 text-gray-400 transition-transform ${isCodeExpanded ? 'rotate-180' : ''}`} />
-                    </button>
-                </div>
-                <AnimatePresence>
-                    {isCodeExpanded && (
-                        <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="overflow-hidden"
-                        >
-                            <CodeBlock code={message.code} language={message.language || 'lua'} />
-                        </motion.div>
+                <>
+                    {message.standing_response ? (
+                        <ThinkerRenderer message={message} searchQuery={searchQuery} />
+                    ) : message.plan ? (
+                        <PlanUIRenderer message={message} onExecutePlan={onExecutePlan} searchQuery={searchQuery} />
+                    ) : message.clarification ? (
+                        <ClarificationRenderer message={message} onClarificationSubmit={onClarificationSubmit} searchQuery={searchQuery}/>
+                    ) : (
+                        <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery} /></p>
                     )}
-                </AnimatePresence>
-              </>
+        
+                    {message.image_base64 && (
+                        <>
+                            <div className="mt-4 not-prose">
+                                <button 
+                                    onClick={() => setIsImageModalOpen(true)} 
+                                    className="block w-full group"
+                                    aria-label="Enlarge image"
+                                >
+                                    <img
+                                        src={`data:image/png;base64,${message.image_base64}`}
+                                        alt="Generated content"
+                                        className="rounded-lg max-w-md mx-auto h-auto shadow-lg transition-transform duration-200 group-hover:scale-[1.02] cursor-pointer"
+                                    />
+                                </button>
+                            </div>
+                    
+                            <AnimatePresence>
+                                {isImageModalOpen && (
+                                    <ImageModal 
+                                        src={`data:image/png;base64,${message.image_base64}`}
+                                        onClose={() => setIsImageModalOpen(false)}
+                                    />
+                                )}
+                            </AnimatePresence>
+                        </>
+                    )}
+        
+                    {message.code && (
+                      <div className="not-prose">
+                        <CodeBlock code={message.code} language={message.language || 'lua'} />
+                      </div>
+                    )}
+                </>
             )}
         </div>
-      </div>
-      {isAdmin && !isUser && (
+      {isAdmin && (
         <button
             onClick={() => setShowRaw(!showRaw)}
             className="mt-2 flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-white bg-white/5 rounded-md transition-colors"

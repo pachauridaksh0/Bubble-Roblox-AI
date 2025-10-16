@@ -1,26 +1,16 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { MagnifyingGlassIcon, XMarkIcon, ChevronUpIcon, ChevronDownIcon, Cog6ToothIcon, ComputerDesktopIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, XMarkIcon, ChevronUpIcon, ChevronDownIcon, Cog6ToothIcon, ComputerDesktopIcon, Bars3Icon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserDropdown } from './UserDropdown';
+import { WorkspaceMode } from '../../types';
+import { WorkspaceModeSelector } from '../ui/WorkspaceModeSelector';
 
-interface ProjectSearchBarProps {
+interface SearchBarProps {
     searchQuery: string;
     onSearchQueryChange: (query: string) => void;
-    searchResultCount: number;
-    currentSearchResultIndex: number;
-    onNextSearchResult: () => void;
-    onPrevSearchResult: () => void;
 }
 
-const ProjectSearchBar: React.FC<ProjectSearchBarProps> = ({
-    searchQuery,
-    onSearchQueryChange,
-    searchResultCount,
-    currentSearchResultIndex,
-    onNextSearchResult,
-    onPrevSearchResult,
-}) => {
+const SearchBar: React.FC<SearchBarProps> = ({ searchQuery, onSearchQueryChange }) => {
     return (
         <div className="relative w-48 md:w-72">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" />
@@ -29,63 +19,53 @@ const ProjectSearchBar: React.FC<ProjectSearchBarProps> = ({
                 placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => onSearchQueryChange(e.target.value)}
-                className="bg-bg-secondary/50 border border-bg-tertiary rounded-lg pl-10 pr-28 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary-start"
+                className="bg-bg-secondary/50 border border-bg-tertiary rounded-lg pl-10 pr-4 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary-start"
             />
             {searchQuery && (
-                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center bg-bg-secondary rounded-full">
-                    <span className="text-xs text-gray-400 px-2">
-                        {searchResultCount > 0 ? `${currentSearchResultIndex + 1} of ${searchResultCount}` : '0 results'}
-                    </span>
-                    <button onClick={onPrevSearchResult} disabled={searchResultCount === 0} className="p-1 text-gray-400 hover:text-white disabled:opacity-50">
-                        <ChevronUpIcon className="w-4 h-4" />
-                    </button>
-                    <button onClick={onNextSearchResult} disabled={searchResultCount === 0} className="p-1 text-gray-400 hover:text-white disabled:opacity-50">
-                        <ChevronDownIcon className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => onSearchQueryChange('')} className="p-1 text-gray-400 hover:text-white">
-                        <XMarkIcon className="w-4 h-4" />
-                    </button>
-                </div>
+                <button onClick={() => onSearchQueryChange('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white">
+                    <XMarkIcon className="w-4 h-4" />
+                </button>
             )}
         </div>
     );
 };
 
-
 interface TopBarProps {
-  onGoToDashboard: () => void;
+  onGoToHub: () => void;
   onAccountSettingsClick: () => void;
   onProjectSettingsClick: () => void;
+  onLogout: () => void;
   activeProjectName: string | null;
   searchQuery: string;
   onSearchQueryChange: (query: string) => void;
-  searchResultCount: number;
-  currentSearchResultIndex: number;
-  onNextSearchResult: () => void;
-  onPrevSearchResult: () => void;
-  canShowPreview?: boolean;
-  isLivePreviewVisible?: boolean;
-  onToggleLivePreview?: () => void;
+  workspaceMode: WorkspaceMode;
+  onWorkspaceModeChange: (mode: WorkspaceMode) => void;
+  isProjectView: boolean;
+  onMobileMenuClick: () => void;
+  isThinking?: boolean;
+  onSwitchToAutonomous: () => void;
+  onSwitchToCocreator: () => void;
 }
 
 const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
 
 export const TopBar: React.FC<TopBarProps> = ({ 
-    onGoToDashboard, 
+    onGoToHub, 
     onAccountSettingsClick, 
     onProjectSettingsClick,
+    onLogout,
     activeProjectName,
     searchQuery,
     onSearchQueryChange,
-    searchResultCount,
-    currentSearchResultIndex,
-    onNextSearchResult,
-    onPrevSearchResult,
-    canShowPreview,
-    isLivePreviewVisible,
-    onToggleLivePreview
+    workspaceMode,
+    onWorkspaceModeChange,
+    isProjectView,
+    onMobileMenuClick,
+    isThinking = false,
+    onSwitchToAutonomous,
+    onSwitchToCocreator
 }) => {
-  const { profile, user, signOut, loading } = useAuth();
+  const { profile, user, loading } = useAuth();
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
@@ -101,18 +81,52 @@ export const TopBar: React.FC<TopBarProps> = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+  
+  if (workspaceMode === 'autonomous') {
+    return (
+      <header className="relative flex-shrink-0 h-16 flex items-center justify-between md:justify-center px-4 md:px-8 border-b border-border-color bg-bg-primary">
+          <div className="md:hidden">
+              <button onClick={onMobileMenuClick} className="p-2 text-gray-400 hover:text-white" aria-label="Open menu">
+                  <Bars3Icon className="w-6 h-6" />
+              </button>
+          </div>
+          <div className="hidden md:flex items-center gap-2 text-sm text-gray-400">
+            {isThinking ? (
+                <>
+                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                    <span>Bubble is thinking...</span>
+                </>
+            ) : (
+                <>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span>Bubble is ready</span>
+                </>
+            )}
+          </div>
+           {/* Placeholder to balance flexbox on mobile */}
+          <div className="w-8 md:hidden" />
+      </header>
+    );
+  }
 
-
+  // Co-Creator mode (Hub or inside a project)
   return (
-    <header className="flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-white/10 bg-bg-primary">
+    <header className="relative flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border-color bg-bg-primary">
       <div className="flex items-center gap-2 md:gap-4 flex-shrink min-w-0">
-        <button onClick={onGoToDashboard} className="flex items-center space-x-2.5 transition-transform hover:scale-105">
+        <div className="md:hidden">
+            <button onClick={onMobileMenuClick} className="p-1 text-gray-400 hover:text-white" aria-label="Open menu">
+                <Bars3Icon className="w-6 h-6" />
+            </button>
+        </div>
+        <button onClick={onGoToHub} className="flex items-center space-x-2.5 transition-transform hover:scale-105" title="Go to Co-Creator Hub">
             <span className="text-2xl">🫧</span>
             <span className="hidden sm:inline text-xl font-bold tracking-wider text-white">Bubble</span>
         </button>
         {activeProjectName && (
             <>
-                <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
+                <div className="h-6 w-px bg-border-color hidden sm:block"></div>
                 <div className="hidden sm:flex items-center gap-2 min-w-0">
                     <span className="font-semibold text-gray-200 truncate">{activeProjectName}</span>
                     <button onClick={onProjectSettingsClick} className="p-1.5 text-gray-400 rounded-md hover:bg-white/10 hover:text-white transition-colors flex-shrink-0">
@@ -122,42 +136,16 @@ export const TopBar: React.FC<TopBarProps> = ({
             </>
         )}
       </div>
+
       <div className="flex items-center space-x-2 md:space-x-4">
-        {activeProjectName ? (
-            <ProjectSearchBar
+        {activeProjectName && (
+            <SearchBar
                 searchQuery={searchQuery}
                 onSearchQueryChange={onSearchQueryChange}
-                searchResultCount={searchResultCount}
-                currentSearchResultIndex={currentSearchResultIndex}
-                onNextSearchResult={onNextSearchResult}
-                onPrevSearchResult={onPrevSearchResult}
             />
-        ) : (
-            <div className="relative hidden md:block">
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                <input 
-                  type="text" 
-                  placeholder="Search all projects..." 
-                  className="bg-bg-secondary/50 border border-bg-tertiary rounded-lg pl-10 pr-4 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-primary-start"
-                />
-            </div>
         )}
-
-        {canShowPreview && (
-          <button
-              onClick={onToggleLivePreview}
-              title="Toggle Live Preview"
-              className={`p-2 rounded-lg transition-colors ${
-                  isLivePreviewVisible
-                      ? 'bg-primary-start/20 text-primary-start'
-                      : 'text-gray-400 hover:bg-white/10 hover:text-white'
-              }`}
-          >
-              <ComputerDesktopIcon className="w-5 h-5" />
-          </button>
-        )}
-
-        <div className="relative" ref={dropdownRef}>
+        
+         <div className="relative" ref={dropdownRef}>
             <button onClick={() => setDropdownOpen(prev => !prev)} className="flex items-center space-x-3 p-1 rounded-lg hover:bg-white/10 transition-colors">
                 {loading ? (
                     <div className="w-9 h-9 rounded-full bg-bg-tertiary animate-pulse"></div>
@@ -168,16 +156,17 @@ export const TopBar: React.FC<TopBarProps> = ({
                         className="w-9 h-9 rounded-full object-cover bg-bg-tertiary"
                     />
                 )}
-                <div className="hidden sm:block">
+                 <div className="hidden sm:block">
                     <p className="text-sm font-semibold text-white truncate max-w-[120px] text-left">{displayName}</p>
-                    <p className="text-xs text-gray-500">Profile</p>
-                </div>
+                 </div>
             </button>
-            <UserDropdown 
+             <UserDropdown 
                 isOpen={isDropdownOpen}
                 onClose={() => setDropdownOpen(false)}
                 onSettingsClick={onAccountSettingsClick}
-                onLogout={signOut}
+                onLogout={onLogout}
+                onSwitchToAutonomous={onSwitchToAutonomous}
+                onSwitchToCocreator={onSwitchToCocreator}
             />
         </div>
       </div>

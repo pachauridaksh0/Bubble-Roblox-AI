@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
@@ -28,11 +29,10 @@ export const CompleteProfilePage: React.FC = () => {
             await createProfile(displayName.trim());
             // On success, the AuthContext state will change and App.tsx will navigate away.
         } catch (err) {
-            if (err instanceof Error && err.message.includes('Failed to fetch')) {
-                setError("Could not save your profile. Please check your network connection and try again.");
-            } else {
-                setError(err instanceof Error ? err.message : 'An unknown error occurred.');
-            }
+            const errorMessage = err instanceof Error
+                ? err.message
+                : 'An unknown error occurred while saving your profile.';
+            setError(errorMessage);
             setIsLoading(false);
         }
     };

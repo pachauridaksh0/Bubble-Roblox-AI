@@ -1,18 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserDropdown } from '../dashboard/UserDropdown';
+import { WorkspaceMode } from '../../types';
+import { Bars3Icon } from '@heroicons/react/24/outline';
 
-type AdminView = 'projects' | 'users' | 'settings';
+// FIX: Added 'personal-settings' and 'credit-system' to align the type with AdminPage.tsx and prevent type errors when passing props.
+type AdminView = 'projects' | 'users' | 'settings' | 'personal-settings' | 'credit-system';
 
 interface AdminTopBarProps {
     currentView: AdminView;
     setView: (view: AdminView) => void;
+    workspaceMode: WorkspaceMode;
+    onWorkspaceModeChange: (mode: WorkspaceMode) => void;
+    onMobileMenuClick: () => void;
+    isThinking?: boolean;
+    onSwitchToAutonomous: () => void;
+    onSwitchToCocreator: () => void;
+    onAccountSettingsClick: () => void;
+    onSignOut: () => void;
 }
 
 const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
 
-export const AdminTopBar: React.FC<AdminTopBarProps> = ({ currentView, setView }) => {
-  const { profile, loading, logoutAdmin } = useAuth();
+export const AdminTopBar: React.FC<AdminTopBarProps> = ({ 
+    currentView, 
+    setView, 
+    workspaceMode, 
+    onWorkspaceModeChange, 
+    onMobileMenuClick, 
+    isThinking = false,
+    onSwitchToAutonomous,
+    onSwitchToCocreator,
+    onAccountSettingsClick,
+    onSignOut
+}) => {
+  const { profile, loading } = useAuth();
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -33,8 +55,37 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({ currentView, setView }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  if (workspaceMode === 'autonomous') {
+    return (
+      <header className="relative flex-shrink-0 h-16 flex items-center justify-between md:justify-center px-4 md:px-8 border-b border-white/10 bg-bg-primary">
+          <div className="md:hidden">
+              <button onClick={onMobileMenuClick} className="p-2 text-gray-400 hover:text-white" aria-label="Open menu">
+                  <Bars3Icon className="w-6 h-6" />
+              </button>
+          </div>
+          <div className="hidden md:flex items-center gap-2 text-sm text-gray-400">
+            {isThinking ? (
+                <>
+                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
+                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
+                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                    <span>Bubble is thinking...</span>
+                </>
+            ) : (
+                <>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span>Bubble is ready</span>
+                </>
+            )}
+          </div>
+           {/* Placeholder to balance flexbox on mobile */}
+          <div className="w-8 md:hidden" />
+      </header>
+    );
+  }
+
   return (
-    <header className="flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-white/10 bg-bg-primary">
+    <header className="relative flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-white/10 bg-bg-primary">
       <div className="flex items-center gap-6">
         <div className="flex items-center gap-3">
             <span className="text-2xl">🫧</span>
@@ -81,8 +132,11 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({ currentView, setView }
           <UserDropdown
               isOpen={isDropdownOpen}
               onClose={() => setDropdownOpen(false)}
-              onExitAdmin={logoutAdmin}
               isAdminView={true}
+              onSettingsClick={onAccountSettingsClick}
+              onLogout={onSignOut}
+              onSwitchToAutonomous={onSwitchToAutonomous}
+              onSwitchToCocreator={onSwitchToCocreator}
           />
       </div>
     </header>

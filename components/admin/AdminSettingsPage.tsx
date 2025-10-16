@@ -1,5 +1,6 @@
 import React from 'react';
 import { Cog8ToothIcon } from '@heroicons/react/24/outline';
+import { CreditSystemSettings } from '../settings/CreditSettings';
 
 const Section: React.FC<{ title: string; children: React.ReactNode; description?: string }> = ({ title, children, description }) => (
     <div>
@@ -24,18 +25,14 @@ export const AdminSettingsPage: React.FC = () => {
       
       <div className="space-y-12">
         <Section 
-            title="General"
-            description="High-level settings for the application."
+            title="Credit System"
+            description="Manage daily credit allowances, purchase costs, and AI model usage costs."
         >
             <SectionCard>
-                <div className="text-center py-12 text-gray-500">
-                     <Cog8ToothIcon className="w-12 h-12 mx-auto animate-spin [animation-duration:5s]" />
-                    <h3 className="text-lg font-semibold mt-4">General Settings Coming Soon</h3>
-                    <p>Configuration options for the application will appear here.</p>
-                </div>
+                <CreditSystemSettings />
             </SectionCard>
         </Section>
-
+        
         <Section 
             title="AI Agent Configuration"
             description="Manage system prompts, default models, and other settings for the AI agents."

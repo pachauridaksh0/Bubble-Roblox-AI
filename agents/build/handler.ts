@@ -3,6 +3,8 @@ import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
 import { intelligentPlanningInstruction } from './instructions';
 import { agentResponseSchema } from './schemas';
 import { Task } from '../../types';
+import { getUserFriendlyError } from '../errorUtils';
+import { getMemoriesForContext } from "../../services/databaseService";
 
 interface AgentResponse {
     responseText?: string;
@@ -20,8 +22,13 @@ interface AgentResponse {
 }
 
 export const runBuildAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
-    const { project, chat, prompt, apiKey, model, history, answers } = input;
+    const { profile, project, chat, prompt, apiKey, model, history, answers, supabase, user, onStreamChunk } = input;
     const ai = new GoogleGenAI({ apiKey });
+    // FIX: Safely access ui_style with a default to prevent type errors when preferences are null.
+    const uiStyle = profile?.onboarding_preferences?.ui_style ?? 'standard';
+
+    // Provide immediate feedback that the agent is working
+    onStreamChunk?.("Analyzing your request to create a plan... ✍️");
 
     // Construct a more detailed prompt for the AI
     let fullPrompt = `Target Platform: ${project.platform}\n\nUser request: "${prompt}"`;
@@ -36,7 +43,8 @@ export const runBuildAgent = async (input: AgentInput): Promise<AgentExecutionRe
 
     const contents = [...geminiHistory, { role: 'user', parts: [{ text: fullPrompt }] }];
     
-    const systemInstruction = `${intelligentPlanningInstruction}\n\nPROJECT CONTEXT:\n${project.project_memory || 'No project context has been set yet.'}`;
+    const memoryContext = await getMemoriesForContext(supabase, user.id, project.id);
+    const systemInstruction = `${intelligentPlanningInstruction}\n\nMEMORY CONTEXT:\n${memoryContext}`;
 
     try {
         const response = await ai.models.generateContent({
@@ -46,35 +54,52 @@ export const runBuildAgent = async (input: AgentInput): Promise<AgentExecutionRe
                 systemInstruction: systemInstruction,
                 responseMimeType: "application/json",
                 responseSchema: agentResponseSchema,
+                temperature: 0.7,
+                topP: 0.95,
             }
         });
 
-        const agentResponse = JSON.parse(response.text.trim()) as AgentResponse;
+        const rawResponseText = response.text.trim();
+        const agentResponse = JSON.parse(rawResponseText) as AgentResponse;
         let messages: AgentOutput = [];
 
         // Case 1: The AI chose to have a simple conversation
         if (agentResponse.responseText) {
-            messages.push({
+            const message: AgentOutput[0] = {
                 project_id: project.id,
                 chat_id: chat.id,
                 sender: 'ai',
                 text: agentResponse.responseText,
-            });
+            };
+            if (input.profile?.role === 'admin') {
+                message.raw_ai_response = rawResponseText;
+            }
+            messages.push(message);
         }
         // Case 2: The AI chose to ask clarifying questions
         else if (agentResponse.clarification) {
-            messages.push({
+             const clarificationLeadIn = uiStyle === 'minimal'
+                ? "To proceed, I need a few details:"
+                : uiStyle === 'advanced'
+                ? "Excellent idea! Let's flesh out the details with a few questions to make it perfect:"
+                : "Sounds like a plan! I just have a couple of quick questions to make sure I get it right:";
+                
+            const message: AgentOutput[0] = {
                 project_id: project.id,
                 chat_id: chat.id,
                 sender: 'ai',
-                text: "Before I create a plan, I have a few technical questions to ensure the architecture is sound:",
+                text: clarificationLeadIn,
                 clarification: agentResponse.clarification,
-            });
+            };
+            if (input.profile?.role === 'admin') {
+                message.raw_ai_response = rawResponseText;
+            }
+            messages.push(message);
         }
         // Case 3: The AI chose to create a plan
         else if (agentResponse.plan) {
             const planTasks: Task[] = agentResponse.plan.tasks.map(t => ({ text: t, status: 'pending' }));
-            messages.push({
+            const message: AgentOutput[0] = {
                 project_id: project.id,
                 chat_id: chat.id,
                 sender: 'ai',
@@ -85,8 +110,12 @@ export const runBuildAgent = async (input: AgentInput): Promise<AgentExecutionRe
                     mermaidGraph: agentResponse.plan.mermaidGraph,
                     tasks: planTasks,
                     isComplete: false,
-                }
-            });
+                },
+            };
+             if (input.profile?.role === 'admin') {
+                message.raw_ai_response = rawResponseText;
+            }
+            messages.push(message);
         }
         // Fallback if the AI returns an empty or invalid response
         else {
@@ -97,12 +126,12 @@ export const runBuildAgent = async (input: AgentInput): Promise<AgentExecutionRe
 
     } catch (error) {
         console.error("Error in runBuildAgent:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        const errorMessage = getUserFriendlyError(error);
         const fallbackMessage: AgentOutput[0] = {
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
-            text: `I'm sorry, but I encountered an error while trying to process your request. Please check the console for details. (Error: ${errorMessage})`
+            text: `I'm sorry, but I encountered an error while trying to process your request. ${errorMessage}`
         };
         return { messages: [fallbackMessage] };
     }

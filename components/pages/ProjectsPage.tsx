@@ -1,22 +1,78 @@
 
 
-import React from 'react';
-import { PlusIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import React, { useState, useEffect } from 'react';
+import { PlusIcon, ExclamationTriangleIcon, SparklesIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import { ProjectCard } from '../dashboard/ProjectCard';
 import { Project, Profile } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
+import { getProjects, deleteProject } from '../../services/databaseService';
+import { NewProjectModal } from '../dashboard/NewProjectModal';
+import { useToast } from '../../hooks/useToast';
+import { AdminConfirmationModal } from '../admin/AdminConfirmationModal';
+import { ImportWizard } from '../import/ImportWizard';
 
 interface ProjectsPageProps {
-  projects: Project[];
-  onSelectProject: (project: Project) => void;
-  onNewProjectClick: () => void;
-  isLoading: boolean;
   profile: Profile | null;
-  error: string | null;
+  onSelectProject: (project: Project) => void;
+  projects?: Project[];
+  isLoading?: boolean;
+  error?: string | null;
+  onDeleteProject?: (project: Project) => void;
 }
 
-export const ProjectsPage: React.FC<ProjectsPageProps> = ({ projects, onSelectProject, onNewProjectClick, isLoading, profile, error }) => {
-  const displayName = profile?.roblox_username?.split(' ')[0] || 'there';
+export const ProjectsPage: React.FC<ProjectsPageProps> = ({ profile, onSelectProject, projects: providedProjects, isLoading: providedIsLoading, error: providedError, onDeleteProject }) => {
+  const { supabase, user } = useAuth();
+  const { addToast } = useToast();
+
+  const [projects, setProjects] = useState<Project[]>(providedProjects || []);
+  const [isLoading, setIsLoading] = useState(providedIsLoading ?? !providedProjects);
+  const [error, setError] = useState<string | null>(providedError || null);
+  
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
+
+
+  useEffect(() => {
+    if (providedProjects) {
+        setProjects(providedProjects.filter(p => p.name !== 'Autonomous Chats'));
+        setIsLoading(providedIsLoading ?? false);
+        setError(providedError || null);
+        return;
+    }
+      
+    const fetchProjects = async () => {
+      if (!user) return;
+      setIsLoading(true);
+      setError(null);
+      try {
+        const userProjects = await getProjects(supabase, user.id);
+        setProjects(userProjects.filter(p => p.name !== 'Autonomous Chats'));
+      } catch (err) {
+        setError("Could not load projects. Please check your network connection.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProjects();
+  }, [user, supabase, providedProjects, providedIsLoading, providedError]);
+
+  const handleConfirmDelete = async () => {
+    if (!projectToDelete || !supabase) return;
+    try {
+        await deleteProject(supabase, projectToDelete.id);
+        setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
+        addToast(`Project "${projectToDelete.name}" was deleted.`, 'info');
+    } catch (err) {
+        const message = err instanceof Error ? err.message : "An unknown error occurred.";
+        addToast(`Failed to delete project: ${message}`, 'error');
+    } finally {
+        setProjectToDelete(null);
+    }
+  };
+
+  const deleteHandler = onDeleteProject || setProjectToDelete;
+  const projectsToRender = providedProjects ? projects : projects.filter(p => p.name !== 'Autonomous Chats');
 
   if (error) {
       return (
@@ -29,57 +85,70 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ projects, onSelectPr
   }
 
   return (
-    <div className="p-4 md:p-8">
-      <div className="flex flex-col gap-4 text-center md:flex-row md:text-left md:justify-between md:items-center mb-8">
-        <div>
-            <h1 className="text-3xl md:text-4xl font-bold text-white">Welcome back, {displayName}!</h1>
-            <p className="text-gray-400 mt-1">Select a project to start building or create a new one.</p>
-        </div>
-        <button 
-          onClick={onNewProjectClick}
-          className="bg-gradient-to-r from-primary-start to-primary-end text-white font-semibold px-5 py-2.5 rounded-lg flex items-center justify-center space-x-2 hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105 flex-shrink-0">
-            <PlusIcon className="w-5 h-5" />
-            <span>New Project</span>
-        </button>
-      </div>
-
-        {isLoading ? (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                 {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="bg-bg-secondary rounded-xl p-5 border border-bg-tertiary animate-pulse">
-                        <div className="flex justify-between items-start mb-4">
-                             <div className="w-12 h-12 rounded-lg bg-bg-tertiary"></div>
-                             <div className="w-20 h-6 rounded-full bg-bg-tertiary"></div>
-                        </div>
-                        <div className="h-6 w-3/4 bg-bg-tertiary rounded mb-2"></div>
-                        <div className="h-4 w-full bg-bg-tertiary rounded"></div>
-                        <div className="h-4 w-1/2 bg-bg-tertiary rounded mt-1"></div>
-                        <div className="border-t border-bg-tertiary mt-4 pt-4">
-                             <div className="h-4 w-1/3 bg-bg-tertiary rounded"></div>
-                        </div>
-                    </div>
-                 ))}
-             </div>
-        ) : (
-             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <motion.div
-                    onClick={onNewProjectClick}
-                    className="group cursor-pointer border-2 border-dashed border-bg-tertiary rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-primary-start hover:bg-bg-secondary transition-all duration-200"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+    <>
+      <div className="p-4 md:p-8">
+        <div className="flex flex-col gap-4 text-center md:flex-row md:text-left md:justify-between md:items-center mb-8">
+          <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-white">Co-Creator Hub</h1>
+              <p className="text-gray-400 mt-1">Manage all your projects created with Bubble AI.</p>
+          </div>
+           <div className="flex items-center justify-center gap-2">
+                <button
+                    onClick={() => setIsImportWizardOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-200 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 transition-colors"
                 >
-                    <div className="w-16 h-16 rounded-full bg-bg-secondary group-hover:bg-primary-start/20 flex items-center justify-center mb-4 transition-colors">
-                        <PlusIcon className="w-8 h-8 text-gray-400 group-hover:text-primary-start transition-colors" />
-                    </div>
-                    <h3 className="font-semibold text-white">Create New Project</h3>
-                    <p className="text-sm text-gray-400">Start building something amazing</p>
-                </motion.div>
-
-                {projects.map(project => (
-                    <ProjectCard key={project.id} project={project} onSelect={onSelectProject} />
-                ))}
+                    <ArrowDownTrayIcon className="w-5 h-5" />
+                    <span>Import Project</span>
+                </button>
             </div>
-        )}
-    </div>
+        </div>
+
+          {isLoading ? (
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                   {Array.from({ length: 4 }).map((_, i) => (
+                      <div key={i} className="bg-bg-secondary rounded-xl p-5 border border-bg-tertiary animate-pulse">
+                          <div className="flex justify-between items-start mb-4">
+                               <div className="w-12 h-12 rounded-lg bg-bg-tertiary"></div>
+                               <div className="w-20 h-6 rounded-full bg-bg-tertiary"></div>
+                          </div>
+                          <div className="h-6 w-3/4 bg-bg-tertiary rounded mb-2"></div>
+                          <div className="h-4 w-full bg-bg-tertiary rounded"></div>
+                          <div className="h-4 w-1/2 bg-bg-tertiary rounded mt-1"></div>
+                          <div className="border-t border-bg-tertiary mt-4 pt-4">
+                               <div className="h-4 w-1/3 bg-bg-tertiary rounded"></div>
+                          </div>
+                      </div>
+                   ))}
+               </div>
+          ) : (
+               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                  {projectsToRender.map(project => (
+                      <ProjectCard key={project.id} project={project} onSelect={onSelectProject} onDelete={deleteHandler} />
+                  ))}
+              </div>
+          )}
+      </div>
+      <AdminConfirmationModal
+        isOpen={!!projectToDelete && !onDeleteProject}
+        onClose={() => setProjectToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        config={projectToDelete ? {
+            title: `Delete "${projectToDelete.name}"?`,
+            message: "This action is permanent and cannot be undone. All associated chats and messages for this project will also be deleted.",
+            confirmText: "Yes, delete project",
+            confirmClassName: 'bg-red-600 text-white hover:bg-red-700'
+        } : null}
+      />
+       <ImportWizard
+          isOpen={isImportWizardOpen}
+          onClose={() => setIsImportWizardOpen(false)}
+          userId={user?.id || ''}
+          onComplete={(project) => {
+              console.log('Import complete!', project);
+              addToast('Project imported successfully!', 'success');
+              // Here you would typically refresh the project list
+          }}
+      />
+    </>
   );
 };

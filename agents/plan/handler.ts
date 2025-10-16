@@ -3,6 +3,8 @@ import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
 import { memoryCreationInstruction } from './instructions';
 import { planAgentSchema } from './schemas';
 import { Message } from '../../types';
+import { getUserFriendlyError } from "../errorUtils";
+import { getMemoriesForContext } from "../../services/databaseService";
 
 interface AgentResponse {
     projectMemory?: string;
@@ -17,13 +19,15 @@ const mapMessagesToGeminiHistory = (messages: Message[]) => {
 };
 
 export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
-    const { project, chat, prompt, apiKey, model, history } = input;
+    const { project, chat, prompt, apiKey, model, history, supabase, user, onStreamChunk } = input;
     const ai = new GoogleGenAI({ apiKey });
+
+    onStreamChunk?.("Thinking about how to update our plan... 🤔");
 
     const geminiHistory = mapMessagesToGeminiHistory(history);
     
-    // Add current memory to the prompt for context
-    const contextPrompt = `Current Project Memory:\n"""\n${project.project_memory || 'This project does not have a memory yet.'}\n"""\n\nUser request: "${prompt}"`;
+    const memoryContext = await getMemoriesForContext(supabase, user.id, project.id);
+    const contextPrompt = `Current Memory Context:\n"""\n${memoryContext}\n"""\n\nUser request: "${prompt}"`;
     const contents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
 
     try {
@@ -34,10 +38,13 @@ export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionRes
                 systemInstruction: memoryCreationInstruction,
                 responseMimeType: "application/json",
                 responseSchema: planAgentSchema,
+                temperature: 0.3,
+                topP: 0.9,
             }
         });
 
-        const agentResponse = JSON.parse(response.text.trim()) as AgentResponse;
+        const rawResponseText = response.text.trim();
+        const agentResponse = JSON.parse(rawResponseText) as AgentResponse;
 
         if (agentResponse.projectMemory) {
             const projectMemory = agentResponse.projectMemory;
@@ -47,6 +54,9 @@ export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionRes
                 sender: 'ai',
                 text: "Got it. I've updated the project's memory with our new plan. You can now use Chat mode for general questions or Build mode to start creating features, and I'll remember this context.",
             };
+            if (input.profile?.role === 'admin') {
+                confirmationMessage.raw_ai_response = rawResponseText;
+            }
 
             return {
                 messages: [confirmationMessage],
@@ -61,6 +71,9 @@ export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionRes
                 sender: 'ai',
                 text: agentResponse.responseText,
             };
+            if (input.profile?.role === 'admin') {
+                conversationalMessage.raw_ai_response = rawResponseText;
+            }
             return { messages: [conversationalMessage] };
         } else {
              throw new Error("The AI returned an unexpected response format.");
@@ -68,12 +81,12 @@ export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionRes
 
     } catch (error) {
         console.error("Error in runPlanAgent:", error);
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        const errorMessage = getUserFriendlyError(error);
         const fallbackMessage: AgentOutput[0] = {
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
-            text: `I'm sorry, but I encountered an error while trying to manage the project memory. (Error: ${errorMessage})`
+            text: `I'm sorry, but I encountered an error while trying to manage the project memory. ${errorMessage}`
         };
         return { messages: [fallbackMessage] };
     }

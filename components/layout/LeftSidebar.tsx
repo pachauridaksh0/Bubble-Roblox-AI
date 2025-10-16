@@ -1,48 +1,127 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Project, Chat } from '../../types';
-import { Cog6ToothIcon, QuestionMarkCircleIcon, PlusIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
-import { motion } from 'framer-motion';
+import { Chat, Profile, WorkspaceMode } from '../../types';
+import { Cog6ToothIcon, PencilIcon, PlusIcon, MagnifyingGlassIcon, ArrowLeftOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon } from '@heroicons/react/24/solid';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChatWithProjectData } from '../../services/databaseService';
+
+const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
+
+interface UserFooterProps {
+    profile: Profile | null;
+    onSettingsClick: () => void;
+    onGoToHub: () => void;
+    onSignOut: () => void;
+}
+
+const UserFooter: React.FC<UserFooterProps> = ({ profile, onSettingsClick, onGoToHub, onSignOut }) => {
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setIsMenuOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const displayName = profile?.roblox_username || 'User';
+
+    return (
+        <div ref={menuRef} className="relative mt-auto flex-shrink-0 pt-2 border-t border-border-color">
+            <AnimatePresence>
+                {isMenuOpen && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        transition={{ duration: 0.15, ease: 'easeOut' }}
+                        className="absolute bottom-full left-0 mb-2 w-full bg-bg-tertiary/90 backdrop-blur-md border border-border-color rounded-lg shadow-2xl z-50 overflow-hidden p-1.5"
+                    >
+                        <button onClick={onSettingsClick} className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-200 rounded-md hover:bg-white/10 hover:text-white transition-colors">
+                            <Cog6ToothIcon className="w-5 h-5" />
+                            <span>Settings</span>
+                        </button>
+                        <button onClick={onGoToHub} className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-200 rounded-md hover:bg-white/10 hover:text-white transition-colors">
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                             <span>Co-Creator Hub</span>
+                        </button>
+                        <button onClick={onSignOut} className="w-full flex items-center gap-3 px-3 py-2 text-sm text-gray-200 rounded-md hover:bg-white/10 hover:text-white transition-colors">
+                            <ArrowLeftOnRectangleIcon className="w-5 h-5" />
+                            <span>Logout</span>
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+            <button
+                onClick={() => setIsMenuOpen(prev => !prev)}
+                className="w-full flex items-center gap-3 px-2 py-2 text-sm rounded-lg transition-colors text-gray-200 hover:bg-white/5"
+            >
+                <img src={profile?.avatar_url || FALLBACK_AVATAR_SVG} alt="Avatar" className="w-8 h-8 rounded-full bg-bg-tertiary" />
+                <div className="flex-1 text-left min-w-0">
+                    <span className="block truncate font-medium text-white">{displayName}</span>
+                     <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                        <SparklesIcon className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                        <span className="truncate">
+                            {profile?.membership === 'admin' 
+                                ? 'Unlimited Credits' 
+                                : `${(profile?.credits ?? 0).toLocaleString()} Credits`}
+                        </span>
+                    </div>
+                </div>
+            </button>
+        </div>
+    );
+};
 
 interface LeftSidebarProps {
-    project: Project | null;
-    chats: Chat[];
+    allChats: ChatWithProjectData[];
     activeChatId?: string;
-    onSelectChat: (chat: Chat) => void;
+    onSelectChat: (chat: ChatWithProjectData) => void;
     onNewChatClick: () => void;
     onUpdateChat: (chatId: string, updates: Partial<Chat>) => void;
+    onDeleteChat: (chatId: string) => void;
     onSettingsClick: () => void;
-    isAdminView: boolean;
-    isCollapsed: boolean;
+    onGoToHub: () => void;
+    onSignOut: () => void;
+    profile: Profile | null;
+    isMobileOpen: boolean;
+    onMobileClose: () => void;
+    workspaceMode: WorkspaceMode;
+    // FIX: Add missing isAdmin prop to satisfy Layout component's usage.
+    isAdmin?: boolean;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({ 
-    project, 
-    chats,
+    allChats,
     activeChatId,
     onSelectChat, 
     onNewChatClick,
     onUpdateChat,
+    onDeleteChat,
     onSettingsClick,
-    isAdminView,
-    isCollapsed,
+    onGoToHub,
+    onSignOut,
+    profile,
+    isMobileOpen,
+    onMobileClose,
+    workspaceMode,
 }) => {
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   
-  const isSettingsDisabled = isAdminView && !project;
-
   useEffect(() => {
     if (renamingChatId && renameInputRef.current) {
         renameInputRef.current.focus();
         renameInputRef.current.select();
     }
   }, [renamingChatId]);
-
-  const handleHelpClick = () => {
-      alert("Help & Support documentation is coming soon!");
-  }
 
   const handleRename = (chat: Chat) => {
     setRenamingChatId(chat.id);
@@ -63,94 +142,118 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         setRenamingChatId(null);
     }
   }
-
-  return (
-    <motion.aside 
-        animate={{ width: isCollapsed ? 80 : 256 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        className="hidden md:flex flex-col p-4 bg-bg-secondary/30 border-r border-white/10 overflow-hidden"
-    >
-        <div className={`flex-shrink-0 p-3 mb-4 transition-all duration-300 ${isCollapsed ? 'px-0 text-center' : ''}`}>
-             <h2 className="text-lg font-semibold text-white truncate">{!isCollapsed && (project?.name || 'No Project Selected')}</h2>
-             <p className={`text-sm text-gray-500 transition-opacity duration-200 ${isCollapsed ? 'opacity-0 h-0' : 'opacity-100'}`}>Project Chats</p>
-        </div>
-      
-      <div className="flex-1 flex flex-col overflow-y-auto">
-        {project ? (
-          <div className="space-y-1">
-            <button
+  
+  const sidebarContent = (
+    <>
+        <div className="flex-shrink-0 space-y-2">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 p-2">
+                    <span className="text-xl">🫧</span>
+                    <h2 className="text-lg font-semibold text-white truncate">Bubble AI</h2>
+                </div>
+            </div>
+             <button
                 onClick={onNewChatClick}
                 title="New Chat"
-                className={`w-full flex items-center gap-2 px-3 py-2 text-sm font-semibold text-white rounded-md bg-primary-start hover:bg-primary-start/80 transition-all duration-150 ease-in-out transform hover:scale-[1.02] active:scale-95 ${isCollapsed ? 'justify-center' : ''}`}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors text-gray-200 hover:bg-white/5"
             >
-                <PlusIcon className="w-5 h-5 flex-shrink-0" />
-                {!isCollapsed && <span>New Chat</span>}
+                <PlusIcon className="w-5 h-5" />
+                <span>New Chat</span>
             </button>
-             {chats.map(chat => (
-                <div
+             <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 pointer-events-none" />
+                <input
+                    type="text"
+                    placeholder="Search chats..."
+                    className="w-full bg-bg-primary border border-border-color rounded-lg pl-10 pr-4 py-2 text-sm text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-start"
+                />
+            </div>
+        </div>
+      
+      <div className="flex-1 flex flex-col overflow-y-auto pr-1 mt-2">
+        {allChats.length > 0 ? (
+          <div className="space-y-1">
+             {allChats.map(chat => (
+                <button
                     key={chat.id}
-                    onContextMenu={(e) => { e.preventDefault(); handleRename(chat); }}
+                    onClick={() => onSelectChat(chat)}
                     title={chat.name}
-                    className={`w-full rounded-md relative ${
-                        activeChatId === chat.id ? 'bg-white/10' : 'hover:bg-white/5'
-                    }`}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors relative group
+                        ${activeChatId === chat.id 
+                            ? 'bg-primary-start text-white' 
+                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                        }
+                    `}
                 >
-                    {activeChatId === chat.id && !isCollapsed && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 bg-primary-start rounded-r-full"></div>
-                    )}
-                    {activeChatId === chat.id && isCollapsed && (
-                        <div className="absolute left-1/2 -translate-x-1/2 bottom-0 h-1 w-5 bg-primary-start rounded-t-full"></div>
-                    )}
-                    {renamingChatId === chat.id && !isCollapsed ? (
-                        <input
-                            ref={renameInputRef}
-                            type="text"
-                            value={renameValue}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onBlur={handleRenameSubmit}
-                            onKeyDown={handleKeyDown}
-                            className="w-full bg-transparent text-white px-3 py-2 text-sm font-medium focus:outline-none ring-2 ring-primary-start rounded-md"
-                        />
-                    ) : (
-                        <button
-                            onClick={() => onSelectChat(chat)}
-                            className={`w-full flex items-center gap-3 py-2 text-sm font-medium transition-colors text-left truncate ${
-                                activeChatId === chat.id ? 'text-white' : 'text-gray-400 hover:text-white'
-                            } ${isCollapsed ? 'justify-center pl-0' : 'pl-2 pr-3'}`}
-                        >
-                            <ChatBubbleLeftRightIcon className="w-5 h-5 flex-shrink-0" />
-                            {!isCollapsed && <span className="truncate">{chat.name}</span>}
-                        </button>
-                    )}
-                </div>
+                    <span className="line-clamp-2 pr-6">
+                        {chat.name}
+                    </span>
+                    
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Are you sure you want to delete "${chat.name}"?`)) {
+                            onDeleteChat(chat.id);
+                        }
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 rounded-md hover:bg-red-500/20 hover:text-red-400 transition-opacity"
+                      title="Delete chat"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                </button>
              ))}
           </div>
         ) : (
-             <div className={`px-3 text-sm text-gray-500 ${isCollapsed ? 'text-center' : ''}`}>{isCollapsed ? '...' : 'Select a project to see its chats.'}</div>
+             <div className="px-3 text-sm text-center text-gray-500 mt-4">No conversations yet.</div>
         )}
       </div>
 
-      <div className="mt-auto flex-shrink-0 pt-4 border-t border-white/10">
-          <nav className="space-y-1">
-              <button
-                  onClick={onSettingsClick}
-                  disabled={isSettingsDisabled}
-                  title={isSettingsDisabled ? "Select a project to view its settings" : "Settings"}
-                  className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-                      isSettingsDisabled 
-                      ? 'text-gray-600 cursor-not-allowed' 
-                      : 'text-gray-300 hover:bg-white/5 hover:text-white'
-                  } ${isCollapsed ? 'justify-center' : ''}`}
-              >
-                  <Cog6ToothIcon className="w-5 h-5 flex-shrink-0" />
-                  {!isCollapsed && <span>Settings</span>}
-              </button>
-              <button onClick={handleHelpClick} title="Help & Support" className={`w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-300 rounded-md hover:bg-white/5 hover:text-white transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
-                  <QuestionMarkCircleIcon className="w-5 h-5 flex-shrink-0" />
-                  {!isCollapsed && <span>Help & Support</span>}
-              </button>
-          </nav>
-      </div>
-    </motion.aside>
+      <UserFooter 
+        profile={profile}
+        onSettingsClick={onSettingsClick}
+        onGoToHub={onGoToHub}
+        onSignOut={onSignOut}
+      />
+    </>
+  );
+
+  const showDesktopSidebar = workspaceMode === 'autonomous';
+
+  return (
+    <>
+        {/* Desktop Sidebar */}
+        <aside 
+            className={`hidden ${showDesktopSidebar ? 'md:flex' : 'md:hidden'} flex-col bg-bg-secondary overflow-hidden w-72 p-2`}
+        >
+            {sidebarContent}
+        </aside>
+
+        {/* Mobile Sidebar Overlay */}
+        <AnimatePresence>
+            {isMobileOpen && (
+                <>
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        onClick={onMobileClose}
+                        className="fixed inset-0 bg-black/60 z-40 md:hidden"
+                        aria-hidden="true"
+                    />
+                    <motion.aside
+                        initial={{ x: '-100%' }}
+                        animate={{ x: '0%' }}
+                        exit={{ x: '-100%' }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                        className="fixed top-0 left-0 bottom-0 w-72 z-50 md:hidden flex flex-col bg-bg-secondary p-2"
+                    >
+                        {sidebarContent}
+                    </motion.aside>
+                </>
+            )}
+        </AnimatePresence>
+    </>
   );
 };
