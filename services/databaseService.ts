@@ -1,5 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { Project, Message, Plan, ProjectPlatform, Profile, Chat, ChatMode, Memory, ProjectType, MemoryLayer, AppSettings } from '../types';
+// FIX: Import GoogleGenAI and Type for the new memory extraction function.
+import { GoogleGenAI, Type } from "@google/genai";
 
 // A new type to represent the data returned from the joined query
 export interface ChatWithProjectData extends Chat {
@@ -8,35 +10,38 @@ export interface ChatWithProjectData extends Chat {
 
 // Helper to extract a clean error message from various error formats.
 const getErrorMessage = (error: any): string => {
-    if (!error) return "An unknown error occurred.";
-    if (typeof error === 'string') return error;
-
-    // Prioritize specific string fields from Supabase/PostgREST
-    let message = error.message || error.error_description || error.details || error.hint;
-
-    // If message is still an object (e.g., a nested error), try to stringify it
-    if (typeof message === 'object' && message !== null) {
-        try {
-            message = JSON.stringify(message);
-        } catch {
-            message = "A nested, non-serializable error object was received.";
-        }
+    if (!error) {
+        return "An unknown error occurred.";
     }
-    
-    // If we have a string at this point, return it.
-    if (typeof message === 'string' && message.trim() !== '' && message.trim() !== '{}') {
-        return message;
+    if (typeof error === 'string') {
+        return error;
     }
-    
-    // Fallback for other complex objects: try to stringify the whole error.
+    // Prioritize standard error message property
+    if (error && typeof error.message === 'string' && error.message.trim() !== '') {
+        return error.message;
+    }
+    // Handle Supabase/PostgREST specific error shapes
+    if (error && typeof error.details === 'string' && error.details.trim() !== '') {
+        return error.details;
+    }
+    if (error && typeof error.error_description === 'string' && error.error_description.trim() !== '') {
+        return error.error_description;
+    }
+    if (error && typeof error.hint === 'string' && error.hint.trim() !== '') {
+        return error.hint;
+    }
+    // Fallback to stringifying the whole object safely
     try {
-        const stringified = JSON.stringify(error);
-        if (stringified !== '{}') return stringified;
-    } catch {
-        // Ignore circular reference errors during stringification
+        const str = JSON.stringify(error);
+        if (str !== '{}') {
+            return str;
+        }
+    } catch (e) {
+        // This can happen with circular references
+        return "A non-serializable error object was thrown. Check the developer console for details.";
     }
-
-    return "An un-serializable error object was thrown. Check the developer console for details.";
+    // Final fallback if nothing else works
+    return "An unknown error occurred. The error object could not be stringified.";
 };
 
 
@@ -47,7 +52,7 @@ const handleSupabaseError = (error: any, context: string): never => {
     const message = getErrorMessage(error);
 
     // Specific check for schema cache errors, which are often transient.
-    if (message.includes('schema cache') || (message.includes('relation') && message.includes('does not exist'))) {
+    if (message.includes('schema cache')) {
         throw new Error(`There was a problem syncing with the database schema. A page refresh usually fixes this. Please refresh and try again.`);
     }
     
@@ -140,14 +145,44 @@ export const updateProject = async (supabase: SupabaseClient, projectId: string,
 };
 
 export const deleteProject = async (supabase: SupabaseClient, projectId: string): Promise<void> => {
-    // This assumes that RLS is configured and cascade deletes are enabled on the 'projects' table
-    // for foreign key constraints in the 'chats' and 'messages' tables.
-    const { error } = await supabase
+    // Manual cascade delete to ensure dependencies are removed first.
+    // This is more reliable than relying on database-level cascade deletes which can be complex with RLS.
+
+    // 1. Get all chats associated with the project
+    const { data: chats, error: chatsError } = await supabase
+        .from('chats')
+        .select('id')
+        .eq('project_id', projectId);
+
+    if (chatsError) handleSupabaseError(chatsError, 'Error fetching chats for project deletion');
+
+    if (chats && chats.length > 0) {
+        const chatIds = chats.map(c => c.id);
+
+        // 2. Delete all messages associated with those chats
+        const { error: messagesError } = await supabase
+            .from('messages')
+            .delete()
+            .in('chat_id', chatIds);
+
+        if (messagesError) handleSupabaseError(messagesError, 'Error deleting messages for project deletion');
+        
+        // 3. Delete all chats for the project
+        const { error: deleteChatsError } = await supabase
+            .from('chats')
+            .delete()
+            .eq('project_id', projectId);
+
+        if (deleteChatsError) handleSupabaseError(deleteChatsError, 'Error deleting chats for project deletion');
+    }
+
+    // 4. Finally, delete the project itself
+    const { error: projectError } = await supabase
         .from('projects')
         .delete()
         .eq('id', projectId);
 
-    if (error) handleSupabaseError(error, 'Error deleting project');
+    if (projectError) handleSupabaseError(projectError, 'Error deleting project');
 };
 
 
@@ -177,7 +212,7 @@ export const getChatsForProject = async (supabase: SupabaseClient, projectId: st
     return data || [];
 };
 
-export const createChat = async (supabase: SupabaseClient, projectId: string, userId: string, name: string, mode: ChatMode): Promise<Chat> => {
+export const createChat = async (supabase: SupabaseClient, userId: string, name: string, mode: ChatMode, projectId?: string | null): Promise<Chat> => {
     const { data, error } = await supabase
         .from('chats')
         .insert({
@@ -351,164 +386,349 @@ export const updateMessageClarification = async (supabase: SupabaseClient, messa
     return data;
 };
 
-// === Memories ===
+// === Memories (New AI-Controlled System) ===
 
-const MEMORY_TOKEN_LIMITS: Record<MemoryLayer, number> = {
-  personal: 1500,
-  project: 3000,
-  codebase: 5000,
-  aesthetic: 2000,
+// FIX: Add missing extractAndSaveMemory function to fix import error in Layout.tsx.
+export const extractAndSaveMemory = async (supabase: SupabaseClient, userId: string, userText: string, aiText: string, projectId?: string | null): Promise<void> => {
+    // 1. Get user's API key from their profile to make a Gemini call.
+    const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('gemini_api_key')
+        .eq('id', userId)
+        .single();
+    
+    if (profileError || !profileData || !profileData.gemini_api_key) {
+        console.warn("Could not extract memory: user has no API key.", profileError);
+        return; // Don't throw, as this is a background, non-critical task.
+    }
+    const apiKey = profileData.gemini_api_key;
+
+    // 2. Call Gemini to extract memories.
+    const ai = new GoogleGenAI({ apiKey });
+
+    const instruction = `You are an AI assistant that extracts important facts from a conversation to be saved to a long-term memory system.
+Analyze the user's message and the AI's response. Identify any new, significant information that should be remembered.
+This could include personal facts, project details, or user preferences.
+If you find something to save, format it as a JSON object. If there is nothing to save, return an empty JSON object.
+
+The memory system has 4 layers: 'personal', 'project', 'codebase', 'aesthetic'.
+
+Respond with a JSON object containing a single key "memoriesToCreate", which is an array of memory objects.
+Each memory object must have "layer", "key", and "value".
+The "key" should be a concise identifier (e.g., "user_name", "project_goal").
+The "value" is the information to store. **This should be a detailed, paragraph-length string capturing the full context.**
+
+Example:
+User: "I'm Alex, I'm 13 and someone at school keeps bullying me"
+AI: "I'm really sorry to hear that, Alex..."
+Your output:
+{
+  "memoriesToCreate": [
+    {
+      "layer": "personal",
+      "key": "user_background",
+      "value": "User is Alex, 13 years old, currently dealing with bullying at school from a classmate. This is causing stress and affecting their daily life."
+    }
+  ]
+}
+
+If nothing needs to be saved, output:
+{
+  "memoriesToCreate": []
+}
+`;
+    
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            memoriesToCreate: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        layer: { type: Type.STRING, enum: ['personal', 'project', 'codebase', 'aesthetic'] },
+                        key: { type: Type.STRING },
+                        value: { type: Type.STRING }
+                    },
+                    required: ["layer", "key", "value"]
+                }
+            }
+        },
+        required: ["memoriesToCreate"]
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `PROJECT_ID: ${projectId || 'N/A'}\nCONVERSATION TURN:\nUser: "${userText}"\nAI: "${aiText}"`,
+            config: {
+                systemInstruction: instruction,
+                responseMimeType: "application/json",
+                responseSchema: schema
+            }
+        });
+        
+        const result = JSON.parse(response.text);
+        
+        if (result.memoriesToCreate && result.memoriesToCreate.length > 0) {
+            for (const mem of result.memoriesToCreate) {
+                await saveMemory(supabase, userId, mem.layer, mem.key, mem.value, projectId);
+            }
+        }
+    } catch (error) {
+        console.warn("Failed to extract and save memory:", error);
+        // Don't throw, as this is a background, non-critical task.
+    }
 };
 
-const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
 
-// FIX: Update function to handle optional importance and set defaults for new memories.
-export const createMemory = async (
-  supabase: SupabaseClient,
-  userId: string,
-  layer: MemoryLayer,
-  content: string,
-  projectId?: string,
-  metadata?: Record<string, any>,
-  importance?: number
-): Promise<Memory> => {
-  const tokens = estimateTokens(content);
-  const limit = MEMORY_TOKEN_LIMITS[layer];
+export const loadMemoriesForPrompt = async (supabase: SupabaseClient, userId: string, prompt: string, projectId?: string | null): Promise<string> => {
+    const { data, error } = await supabase
+        .from('memories')
+        .select('layer, content, metadata')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false });
+    
+    if (error) handleSupabaseError(error, 'Failed to load memories for prompt');
+    
+    if (!data || data.length === 0) {
+        return "=== MEMORIES LOADED ===\nNone yet!\n=======================";
+    }
 
-  if (tokens > limit) {
-    throw new Error(
-      `Memory too large for ${layer} layer. Max ${limit} tokens, got ~${tokens}.`
-    );
-  }
+    const relevantMemories = data.filter(m => {
+        // Rule 1: Always include global memories.
+        if (m.layer === 'personal' || m.layer === 'aesthetic') {
+            return true;
+        }
+        
+        // Rule 2: If we are in a project, include memories specific to that project.
+        if (projectId && (m.layer === 'project' || m.layer === 'codebase')) {
+            const memoryProjectId = m.metadata?.project_id;
+            return memoryProjectId === projectId;
+        }
 
-  const { data, error } = await supabase
-    .from('memories')
-    .insert({
-      user_id: userId,
-      project_id: projectId || null,
-      layer,
-      content,
-      metadata: metadata || {},
-      token_count: tokens,
-      importance: importance ?? 0.5,
-      usage_count: 0,
-    })
-    .select()
-    .single();
+        // Rule 3: Otherwise (e.g., in an autonomous chat), don't include project-specific memories.
+        return false;
+    });
+    
+    let finalMemories = relevantMemories;
 
-  if (error) handleSupabaseError(error, 'Failed to add memory');
-  return data;
+    // If we have more than 50 memories, perform a relevance-ranking search to simulate semantic search.
+    if (relevantMemories.length > 50) {
+        const keywords = prompt.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+        
+        const scoredMemories = relevantMemories.map(memory => {
+            const content = memory.content?.toLowerCase() || '';
+            const key = memory.metadata?.memory_key?.toLowerCase() || '';
+            let score = 0;
+            
+            // Global memories are highly important and should always be considered.
+            if (memory.layer === 'personal' || memory.layer === 'aesthetic') {
+                score += 100;
+            }
+
+            for (const keyword of keywords) {
+                if (key.includes(keyword)) score += 5; // Higher score for matching the key
+                if (content.includes(keyword)) score += 1;
+            }
+            return { memory, score };
+        });
+
+        scoredMemories.sort((a, b) => b.score - a.score);
+        finalMemories = scoredMemories.slice(0, 50).map(item => item.memory);
+    }
+    
+    if (finalMemories.length === 0) {
+        return "=== MEMORIES LOADED ===\nNone relevant to this context yet.\n=======================";
+    }
+
+    const byLayer: Record<string, string[]> = {
+        personal: [], project: [], codebase: [], aesthetic: []
+    };
+    
+    finalMemories.forEach(m => {
+        const key = m.metadata?.memory_key || m.metadata?.key;
+        const value = m.content;
+        
+        if (m.layer && key && value) {
+           byLayer[m.layer as MemoryLayer].push(`[${key}]\n${value}`);
+        }
+    });
+    
+    return `
+=== MEMORIES LOADED ===
+
+PERSONAL:
+${byLayer.personal.join('\n\n') || 'None'}
+
+PROJECT:
+${byLayer.project.join('\n\n') || 'None'}
+
+CODEBASE:
+${byLayer.codebase.join('\n\n') || 'None'}
+
+AESTHETIC:
+${byLayer.aesthetic.join('\n\n') || 'None'}
+
+========================
+    `.trim();
 };
 
-// FIX: Renamed function from getMemories to getMemoriesForUser to match usage in MemoryDashboard.
-export const getMemoriesForUser = async (
-  supabase: SupabaseClient,
-  userId: string,
-  projectId?: string,
-  layer?: MemoryLayer
-): Promise<Memory[]> => {
-  let query = supabase
-    .from('memories')
-    .select('*')
-    .eq('user_id', userId);
+function validateMemoryLength(key: string, content: string): { valid: boolean; warning?: string } {
+    const paragraphs = content.split('\n\n').filter(p => p.trim().length > 0);
+    const paragraphCount = paragraphs.length;
 
-  if (projectId) {
-    query = query.or(`project_id.is.null,project_id.eq.${projectId}`);
-  } else {
-    query = query.is('project_id', null);
-  }
+    if (paragraphCount > 2) {
+        return {
+            valid: false,
+            warning: `Memory "${key}" is ${paragraphCount} paragraphs (max 2 allowed). Consider splitting into separate memories.`
+        };
+    }
+    
+    const estimatedTokens = content.length / 4;
+    if (estimatedTokens > 500) {
+        return {
+            valid: false,
+            warning: `Memory "${key}" is too long (~${Math.round(estimatedTokens)} tokens). Keep under 500 tokens (~2 paragraphs).`
+        };
+    }
 
-  if (layer) {
-    query = query.eq('layer', layer);
-  }
+    return { valid: true };
+}
 
-  query = query.order('created_at', { ascending: false });
 
-  const { data, error } = await query;
-  if (error) handleSupabaseError(error, 'Failed to get memories');
-  return data || [];
+// FIX: Implemented a manual upsert to map the app's key/value system to the DB's content/metadata schema.
+export const saveMemory = async (supabase: SupabaseClient, userId: string, layer: MemoryLayer, key: string, value: string, projectId?: string | null): Promise<Memory> => {
+    // Validate length before saving.
+    const validation = validateMemoryLength(key, value);
+    if (!validation.valid) {
+        console.warn(`Memory validation failed: ${validation.warning}`);
+        // We still save it but log the warning as requested.
+    }
+
+    // Since we can't use onConflict with a jsonb key without a special index,
+    // we perform a manual SELECT then INSERT/UPDATE to achieve an upsert.
+    const { data: existing, error: findError } = await supabase
+        .from('memories')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('layer', layer)
+        .eq('metadata->>memory_key', key) // Query the JSONB field for our key
+        .limit(1);
+
+    if (findError) handleSupabaseError(findError, 'Failed to check for existing memory');
+
+    const metadata: { memory_key: string, project_id?: string } = { memory_key: key };
+    if (projectId) {
+        metadata.project_id = projectId;
+    }
+
+    const memoryPayload = {
+        user_id: userId,
+        layer,
+        content: value, // The `value` goes into the `content` column.
+        metadata: metadata, // The `key` and optional `projectId` are stored in metadata.
+        updated_at: new Date().toISOString()
+    };
+
+    let savedData;
+    if (existing && existing.length > 0) {
+        // --- UPDATE existing memory ---
+        const { data, error } = await supabase
+            .from('memories')
+            .update(memoryPayload)
+            .eq('id', existing[0].id)
+            .select()
+            .single();
+        if (error) handleSupabaseError(error, 'Failed to update memory');
+        savedData = data;
+    } else {
+        // --- INSERT new memory ---
+        const { data, error } = await supabase
+            .from('memories')
+            .insert(memoryPayload)
+            .select()
+            .single();
+        if (error) handleSupabaseError(error, 'Failed to create memory');
+        savedData = data;
+    }
+    
+    // Map the database result back to the application's expected format.
+    return {
+        ...savedData,
+        key: savedData.metadata?.memory_key || key,
+        value: savedData.content || value
+    };
 };
 
-// FIX: Renamed function from buildMemoryContext to getMemoriesForContext to match agent imports.
-export const getMemoriesForContext = async (
-  supabase: SupabaseClient,
-  userId: string,
-  projectId?: string
-): Promise<string> => {
-  const memories = await getMemoriesForUser(supabase, userId, projectId);
-
-  const grouped: Record<MemoryLayer, Memory[]> = {
-    personal: memories.filter(m => m.layer === 'personal'),
-    project: memories.filter(m => m.layer === 'project'),
-    codebase: memories.filter(m => m.layer === 'codebase'),
-    aesthetic: memories.filter(m => m.layer === 'aesthetic'),
-  };
-
-  const context = `
-=== PERSONAL MEMORY (User Preferences & Background) ===
-${grouped.personal.map(m => m.content).join('\n') || 'None yet.'}
-
-=== PROJECT MEMORY (Current Project Context) ===
-${grouped.project.map(m => m.content).join('\n') || 'None yet.'}
-
-=== CODEBASE MEMORY (Coding Patterns & Architecture) ===
-${grouped.codebase.map(m => m.content).join('\n') || 'None yet.'}
-
-=== AESTHETIC MEMORY (Design & UI Preferences) ===
-${grouped.aesthetic.map(m => m.content).join('\n') || 'None yet.'}
-`.trim();
-
-  return context;
+// FIX: Rewrote to fetch from the correct columns and map the result to the key/value format used by the UI.
+export const getMemoriesForUser = async (supabase: SupabaseClient, userId: string): Promise<Memory[]> => {
+    const { data, error } = await supabase
+        .from('memories')
+        .select('*')
+        .eq('user_id', userId)
+        .order('layer')
+        .order('updated_at', { ascending: false }); // Order by a column that exists.
+        
+    if (error) handleSupabaseError(error, 'Failed to get memories');
+    
+    // Map from DB schema (content, metadata) to application type (key, value)
+    return (data || []).map((dbMemory: any) => ({
+        ...dbMemory,
+        key: dbMemory.metadata?.memory_key || dbMemory.metadata?.key || '[No Key]',
+        value: dbMemory.content,
+    }));
 };
 
-// FIX: Updated function to accept a partial updates object to allow updating more than just content.
-export const updateMemory = async (
-  supabase: SupabaseClient,
-  memoryId: string,
-  updates: Partial<Omit<Memory, 'id' | 'user_id' | 'created_at'>>
-): Promise<Memory> => {
-  const finalUpdates: Partial<Memory> = { ...updates, updated_at: new Date().toISOString() };
-  if (updates.content) {
-    finalUpdates.token_count = estimateTokens(updates.content);
-  }
-  
-  const { data, error } = await supabase
-    .from('memories')
-    .update(finalUpdates)
-    .eq('id', memoryId)
-    .select()
-    .single();
-  if (error) handleSupabaseError(error, 'Failed to update memory');
-  return data;
+// FIX: Rewrote to handle mapping UI updates (key/value) back to the database schema (content/metadata).
+export const updateMemory = async (supabase: SupabaseClient, memoryId: string, updates: Partial<Omit<Memory, 'id' | 'user_id' | 'created_at'>>): Promise<Memory> => {
+    // The 'updates' object from the UI will have 'key' and/or 'value'.
+    // We need to map this back to 'content' and 'metadata'.
+    const dbUpdates: { content?: string; layer?: MemoryLayer; metadata?: any; updated_at: string } = {
+        updated_at: new Date().toISOString()
+    };
+
+    if ('layer' in updates && updates.layer) dbUpdates.layer = updates.layer;
+    if ('value' in updates && updates.value) {
+        // Validate the new content length
+        const validation = validateMemoryLength(updates.key || 'unknown', updates.value);
+        if (!validation.valid) {
+            console.warn(`Memory validation failed during update: ${validation.warning}`);
+        }
+        dbUpdates.content = updates.value;
+    }
+
+    // Handling the key update requires a read-modify-write on the metadata JSONB object.
+    if ('key' in updates && updates.key) {
+        const { data: existing, error: fetchError } = await supabase
+            .from('memories')
+            .select('metadata')
+            .eq('id', memoryId)
+            .single();
+        if (fetchError) handleSupabaseError(fetchError, 'Failed to fetch memory to update key');
+        
+        const newMetadata = { ...(existing?.metadata || {}), memory_key: updates.key };
+        dbUpdates.metadata = newMetadata;
+    }
+    
+    const { data, error } = await supabase
+        .from('memories')
+        .update(dbUpdates)
+        .eq('id', memoryId)
+        .select()
+        .single();
+    if (error) handleSupabaseError(error, 'Failed to update memory');
+    
+    // Map the database result back to the application's expected format
+    return {
+        ...data,
+        key: data.metadata?.memory_key || data.metadata?.key || '[No Key]',
+        value: data.content,
+    };
 };
 
+// Deletes a memory entry, used by the dashboard.
 export const deleteMemory = async (supabase: SupabaseClient, memoryId: string): Promise<void> => {
-  const { error } = await supabase.from('memories').delete().eq('id', memoryId);
-  if (error) handleSupabaseError(error, 'Error deleting memory');
-};
-
-export const extractAndSaveMemory = async (
-  supabase: SupabaseClient,
-  userId: string,
-  userMessage: string,
-  aiResponse: string,
-  projectId?: string
-): Promise<void> => {
-  const lower = userMessage.toLowerCase();
-  
-  if (lower.includes('my name is') || lower.includes('i prefer') || lower.includes('call me')) {
-    await createMemory(supabase, userId, 'personal', `User stated: ${userMessage}`);
-  }
-  
-  if (lower.includes('project') || lower.includes('building') || lower.includes('working on')) {
-    await createMemory(supabase, userId, 'project', `Project context: ${userMessage} → AI noted: ${aiResponse.slice(0, 100)}`, projectId);
-  }
-  
-  if (lower.includes('always use') || lower.includes('code style') || lower.includes('architecture')) {
-    await createMemory(supabase, userId, 'codebase', `Coding preference: ${userMessage}`, projectId);
-  }
-  
-  if (lower.includes('design') || lower.includes('color') || lower.includes('ui') || lower.includes('theme')) {
-    await createMemory(supabase, userId, 'aesthetic', `Design preference: ${userMessage}`, projectId);
-  }
+    const { error } = await supabase.from('memories').delete().eq('id', memoryId);
+    if (error) handleSupabaseError(error, 'Error deleting memory');
 };

@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Chat, Profile, WorkspaceMode } from '../../types';
+import { Chat, Profile, WorkspaceMode, Project } from '../../types';
 import { Cog6ToothIcon, PencilIcon, PlusIcon, MagnifyingGlassIcon, ArrowLeftOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -93,7 +93,7 @@ interface LeftSidebarProps {
     isMobileOpen: boolean;
     onMobileClose: () => void;
     workspaceMode: WorkspaceMode;
-    // FIX: Add missing isAdmin prop to satisfy Layout component's usage.
+    activeProject: Project | null;
     isAdmin?: boolean;
 }
 
@@ -111,6 +111,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     isMobileOpen,
     onMobileClose,
     workspaceMode,
+    activeProject
 }) => {
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -147,10 +148,10 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     <>
         <div className="flex-shrink-0 space-y-2">
             <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 p-2">
+                <button onClick={onGoToHub} className="flex items-center gap-2 p-2 text-left w-full hover:bg-white/5 rounded-lg transition-colors">
                     <span className="text-xl">🫧</span>
                     <h2 className="text-lg font-semibold text-white truncate">Bubble AI</h2>
-                </div>
+                </button>
             </div>
              <button
                 onClick={onNewChatClick}
@@ -171,12 +172,18 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         </div>
       
       <div className="flex-1 flex flex-col overflow-y-auto pr-1 mt-2">
+        {workspaceMode === 'cocreator' && activeProject && (
+            <div className="px-3 pt-2 pb-3 mb-2 border-b border-border-color">
+                <p className="text-xs text-gray-500 uppercase font-semibold tracking-wider">Project</p>
+                <h3 className="font-semibold text-white truncate mt-1">{activeProject.name}</h3>
+            </div>
+        )}
         {allChats.length > 0 ? (
           <div className="space-y-1">
              {allChats.map(chat => (
                 <button
                     key={chat.id}
-                    onClick={() => onSelectChat(chat)}
+                    onClick={() => renamingChatId !== chat.id && onSelectChat(chat)}
                     title={chat.name}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors relative group
                         ${activeChatId === chat.id 
@@ -185,27 +192,43 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         }
                     `}
                 >
-                    <span className="line-clamp-2 pr-6">
-                        {chat.name}
+                    <span className="line-clamp-2 pr-12">
+                        {renamingChatId === chat.id ? (
+                            <input
+                                ref={renameInputRef}
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onBlur={handleRenameSubmit}
+                                onKeyDown={handleKeyDown}
+                                className="w-full bg-transparent outline-none ring-1 ring-primary-start rounded -m-1 p-1"
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        ) : (
+                           chat.name 
+                        )}
                     </span>
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm(`Are you sure you want to delete "${chat.name}"?`)) {
-                            onDeleteChat(chat.id);
-                        }
-                      }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 rounded-md hover:bg-red-500/20 hover:text-red-400 transition-opacity"
-                      title="Delete chat"
-                    >
-                      <TrashIcon className="w-4 h-4" />
-                    </button>
+                    {renamingChatId !== chat.id && (
+                        <div className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center bg-inherit rounded">
+                            <button onClick={(e) => { e.stopPropagation(); handleRename(chat); }} className="p-1.5 rounded text-gray-400 hover:text-white hover:bg-black/20" title="Rename">
+                                <PencilIcon className="w-4 h-4" />
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); onDeleteChat(chat.id); }} className="p-1.5 rounded text-gray-400 hover:text-red-400 hover:bg-black/20" title="Delete">
+                                <TrashIcon className="w-4 h-4" />
+                            </button>
+                        </div>
+                    )}
                 </button>
              ))}
           </div>
         ) : (
-             <div className="px-3 text-sm text-center text-gray-500 mt-4">No conversations yet.</div>
+             <div className="px-3 text-sm text-center text-gray-500 mt-4">
+                {workspaceMode === 'cocreator' && !activeProject
+                    ? 'No autonomous chats found.'
+                    : workspaceMode === 'cocreator'
+                    ? 'No chats in this project yet.' 
+                    : 'No conversations yet.'}
+             </div>
         )}
       </div>
 
@@ -218,13 +241,11 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
     </>
   );
 
-  const showDesktopSidebar = workspaceMode === 'autonomous';
-
   return (
     <>
         {/* Desktop Sidebar */}
         <aside 
-            className={`hidden ${showDesktopSidebar ? 'md:flex' : 'md:hidden'} flex-col bg-bg-secondary overflow-hidden w-72 p-2`}
+            className="hidden md:flex flex-col bg-bg-secondary overflow-hidden w-72 p-2"
         >
             {sidebarContent}
         </aside>
@@ -239,7 +260,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         onClick={onMobileClose}
-                        className="fixed inset-0 bg-black/60 z-40 md:hidden"
+                        className="fixed inset-0 bg-black/60 z-40"
                         aria-hidden="true"
                     />
                     <motion.aside
@@ -247,7 +268,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         animate={{ x: '0%' }}
                         exit={{ x: '-100%' }}
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        className="fixed top-0 left-0 bottom-0 w-72 z-50 md:hidden flex flex-col bg-bg-secondary p-2"
+                        className="fixed top-0 left-0 bottom-0 w-72 z-50 flex flex-col bg-bg-secondary p-2"
                     >
                         {sidebarContent}
                     </motion.aside>

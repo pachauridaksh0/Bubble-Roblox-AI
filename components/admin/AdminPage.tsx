@@ -1,9 +1,11 @@
+
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { LeftSidebar } from '../layout/LeftSidebar';
 import { ChatView } from '../chat/ChatView';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { AdminTopBar } from './AdminTopBar';
-import { Project, Message, Chat, WorkspaceMode } from '../../types';
+import { Project, Message, Chat, WorkspaceMode, ProjectPlatform, ProjectType } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { 
     getAllProjects, 
@@ -19,7 +21,7 @@ import {
     deleteProject,
     deleteChat
 } from '../../services/databaseService';
-import { validateApiKey, classifyUserIntent, generateProjectDetails } from '../../services/geminiService';
+import { validateApiKey, classifyUserIntent, generateProjectDetails, generateChatTitle } from '../../services/geminiService';
 import { motion } from 'framer-motion';
 import { KeyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { AdminUsersPage } from './AdminUsersPage';
@@ -31,6 +33,9 @@ import { useToast } from '../../hooks/useToast';
 import { runAgent } from '../../agents';
 import { AdminConfirmationModal } from './AdminConfirmationModal';
 import { SettingsPage } from '../pages/SettingsPage';
+import { MarketplacePage } from '../community/MarketplacePage';
+import { MessagesPage } from '../community/MessagesPage';
+import { DiscoverPage } from '../community/DiscoverPage';
 
 const AdminApiKeySetup: React.FC = () => {
     const { setGeminiApiKey } = useAuth();
@@ -96,8 +101,20 @@ const AdminApiKeySetup: React.FC = () => {
     );
 };
 
-// FIX: Add 'credit-system' to align with AdminTopBar's type definition and resolve the error.
-type AdminView = 'projects' | 'users' | 'settings' | 'personal-settings' | 'credit-system';
+const DUMMY_AUTONOMOUS_PROJECT: Project = {
+    id: 'autonomous-project-admin',
+    user_id: 'admin',
+    name: 'Autonomous Chat',
+    description: 'A personal chat with the AI.',
+    status: 'In Progress',
+    platform: 'Web App',
+    project_type: 'conversation',
+    default_model: 'gemini-2.5-flash',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+};
+
+type AdminView = 'projects' | 'users' | 'settings' | 'personal-settings' | 'credit-system' | 'marketplace' | 'messages' | 'discover';
 
 export const AdminPage: React.FC = () => {
   const { geminiApiKey, user, supabase, profile, isAdmin, signOut } = useAuth();
@@ -123,7 +140,36 @@ export const AdminPage: React.FC = () => {
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   
-  const activeProject = useMemo(() => activeChat?.projects ?? null, [activeChat]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<number[]>([]);
+  const [currentSearchResultIndex, setCurrentSearchResultIndex] = useState(-1);
+  
+  const isThinking = isLoading || isCreatingChat;
+  const [loadingMessage, setLoadingMessage] = useState('Bubble is ready');
+  const loadingTexts = useMemo(() => [
+    "Thinking...", "Analyzing request...", "Consulting memory...", 
+    "Formulating plan...", "Generating code...", "Adapting to updates..."
+  ], []);
+
+  useEffect(() => {
+    let intervalId: number | undefined;
+    if (isThinking) {
+        let currentIndex = 0;
+        setLoadingMessage(loadingTexts[currentIndex]);
+        intervalId = window.setInterval(() => {
+            currentIndex = (currentIndex + 1) % loadingTexts.length;
+            setLoadingMessage(loadingTexts[currentIndex]);
+        }, 2500);
+    } else {
+        setLoadingMessage('Bubble is ready');
+    }
+    return () => {
+        if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [isThinking, loadingTexts]);
+
+  const activeProject = useMemo(() => activeCocreatorProject || activeChat?.projects || null, [activeCocreatorProject, activeChat]);
+
 
   // Always start in autonomous mode on app load for admin.
   useEffect(() => {
@@ -131,8 +177,20 @@ export const AdminPage: React.FC = () => {
   }, []);
 
   const autonomousChats = useMemo(() => {
-    return allChats.filter(c => c.projects?.name === 'Autonomous Chats (Admin)');
+    return allChats.filter(c => !c.project_id);
   }, [allChats]);
+  
+  const chatsForSidebar = useMemo(() => {
+    if (workspaceMode === 'cocreator') {
+        if (activeCocreatorProject) {
+             const projectChats = allChats.filter(c => c.project_id === activeCocreatorProject.id);
+             return projectChats;
+        }
+        return [];
+    }
+    // In autonomous mode, show the admin's autonomous chats.
+    return autonomousChats;
+  }, [allChats, workspaceMode, activeCocreatorProject, autonomousChats]);
 
   // Fetch all projects for the Co-Creator hub view
   const fetchAdminProjects = useCallback(async () => {
@@ -158,23 +216,45 @@ export const AdminPage: React.FC = () => {
     }
   }, [supabase, geminiApiKey, fetchAdminProjects]);
 
-  // Fetch the admin's own chats for the Autonomous sidebar
+  // Fetch chats. This needs to be smarter.
+  // When in autonomous, fetch admin's chats.
+  // When a project is selected, fetch that project's chats.
   useEffect(() => {
     if (!user || !supabase) return;
+    
+    const fetchRelevantChats = async () => {
+        setIsLoading(true);
+        try {
+            if (workspaceMode === 'cocreator' && activeCocreatorProject) {
+                // We'll fetch ALL chats for the project owner instead.
+                const projectOwnerId = activeCocreatorProject.user_id;
+                const ownerChats = await getAllChatsForUser(supabase, projectOwnerId);
+                setAllChats(ownerChats);
+                
+                const latestChat = ownerChats
+                    .filter(c => c.project_id === activeCocreatorProject.id)
+                    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0];
 
-    const fetchAdminChats = async () => {
-      setIsLoading(true);
-      try {
-        const adminChats = await getAllChatsForUser(supabase, user.id);
-        setAllChats(adminChats);
-      } catch (error) { addToast("Could not load your conversations.", "error"); } 
-      finally { setIsLoading(false); }
+                if (latestChat) {
+                    setActiveChat(latestChat);
+                } else {
+                    setActiveChat(null);
+                }
+
+            } else { // Autonomous mode
+                const adminChats = await getAllChatsForUser(supabase, user.id);
+                setAllChats(adminChats);
+            }
+        } catch (error) {
+            addToast("Could not load conversations.", "error");
+        } finally {
+            setIsLoading(false);
+        }
     };
-    fetchAdminChats();
+    
+    fetchRelevantChats();
 
-    const channel = supabase.channel(`admin-user-chats-${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'chats', filter: `user_id=eq.${user.id}` }, fetchAdminChats).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user, supabase, addToast]);
+  }, [user, supabase, addToast, workspaceMode, activeCocreatorProject]);
   
   // Fetch messages for the currently active chat (in any mode)
   useEffect(() => {
@@ -195,8 +275,10 @@ export const AdminPage: React.FC = () => {
   
   const handleSelectChat = (chat: ChatWithProjectData) => {
     setActiveChat(chat);
-    setActiveCocreatorProject(null);
-    setWorkspaceMode('autonomous');
+    if (workspaceMode === 'autonomous') {
+        setActiveCocreatorProject(null);
+    }
+    setIsMobileSidebarOpen(false);
   };
 
   const handleGoToHub = () => {
@@ -204,6 +286,7 @@ export const AdminPage: React.FC = () => {
     setActiveChat(null);
     setActiveCocreatorProject(null);
     setView('projects');
+    setIsMobileSidebarOpen(false);
   };
   
   const handleGoToSettings = () => {
@@ -211,12 +294,15 @@ export const AdminPage: React.FC = () => {
     setWorkspaceMode('cocreator'); // Keep in cocreator mode for settings page
     setActiveChat(null);
     setActiveCocreatorProject(null);
+    setIsMobileSidebarOpen(false);
   };
 
   const handleNewChat = () => {
     setActiveChat(null);
     setActiveCocreatorProject(null);
     setWorkspaceMode('autonomous');
+    setView('projects'); // Go back to a neutral view
+    setIsMobileSidebarOpen(false);
   };
 
   const handleDeleteChat = async (chatId: string) => {
@@ -235,20 +321,28 @@ export const AdminPage: React.FC = () => {
 
   const handleSelectProjectFromHub = async (project: Project) => {
     if (!supabase) return;
-    setActiveCocreatorProject(project);
+    setActiveCocreatorProject(project); // This will trigger the useEffect to fetch chats
+  };
+
+  const handleCreateCoCreatorProject = async (name: string, platform: ProjectPlatform, projectType: ProjectType): Promise<void> => {
+    if (!user || !supabase) return;
+    setIsCreatingChat(true);
     try {
-        const projectChats = await getChatsForProject(supabase, project.id);
-        const sortedChats = projectChats.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-        if (sortedChats.length > 0) {
-            setActiveChat({ ...sortedChats[0], projects: project });
-        } else {
-            setActiveChat(null);
-            addToast("This project doesn't have any chats yet.", "info");
-        }
-    } catch {
-        addToast("Could not load chats for this project.", "error");
+        const newProject = await createProject(supabase, user.id, name, platform, projectType);
+        addToast(`Created new admin project: ${name}!`, "success");
+        fetchAdminProjects(); // Refetch all projects
+        // After creation, select the project to enter its workspace
+        handleSelectProjectFromHub(newProject);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(`Failed to create project: ${errorMessage}`, "error");
+        console.error("Error creating co-creator project:", error);
+        throw error; // Re-throw to keep modal open
+    } finally {
+        setIsCreatingChat(false);
     }
   };
+
 
   const createProjectFromPrompt = async (prompt: string) => {
     if (!user || !supabase || !geminiApiKey) return;
@@ -261,7 +355,7 @@ export const AdminPage: React.FC = () => {
       newProject.description = description;
       await updateDbProject(supabase, newProject.id, { description });
 
-      const newChat = await createDbChat(supabase, newProject.id, user.id, name, 'build');
+      const newChat = await createDbChat(supabase, user.id, name, 'build', newProject.id);
       const newChatWithProject: ChatWithProjectData = { ...newChat, projects: newProject };
 
       addToast(`Created new admin project: ${name}!`, "success");
@@ -284,40 +378,18 @@ export const AdminPage: React.FC = () => {
     setIsCreatingChat(true);
     try {
       if (workspaceMode === 'autonomous') {
-        // Find or create the master project for all of the admin's autonomous chats
-        let autonomousProject = allChats.find(c => c.projects?.name === 'Autonomous Chats (Admin)')?.projects;
-        if (!autonomousProject) {
-          autonomousProject = await createProject(supabase, user.id, 'Autonomous Chats (Admin)', 'Web App', 'document', 'A collection of all admin conversations in Autonomous Mode.');
-        }
-
-        // Create a new chat for this specific conversation, named after the prompt
-        const newChatName = prompt.length > 40 ? `${prompt.substring(0, 37)}...` : prompt;
-        const newChat = await createDbChat(supabase, autonomousProject.id, user.id, newChatName, 'chat');
-        
-        const newChatWithProject: ChatWithProjectData = { ...newChat, projects: autonomousProject };
-        
+        const newChatName = prompt; // Will be renamed by AI
+        const newChat = await createDbChat(supabase, user.id, newChatName, 'chat', null);
+        const newChatWithProject: ChatWithProjectData = { ...newChat, projects: null };
         setAllChats(prev => [newChatWithProject, ...prev]);
         setActiveChat(newChatWithProject);
-        // Now that the chat exists, call the regular send message handler
         await handleSendMessage(prompt, newChatWithProject);
-
-      } else { // Keep existing Co-Creator logic for admin
+      } else { // Co-Creator mode for admin
         const { intent } = await classifyUserIntent(prompt, geminiApiKey);
         if (intent === 'creative_request') {
           await createProjectFromPrompt(prompt);
         } else {
-          let generalChat = allChats.find(c => c.projects?.name === 'General Chat (Admin)');
-          if (generalChat) {
-            setActiveChat(generalChat);
-            await handleSendMessage(prompt, generalChat);
-          } else {
-            const newProject = await createProject(supabase, user.id, 'General Chat (Admin)', 'Web App', 'document');
-            const newChat = await createDbChat(supabase, newProject.id, user.id, 'General Chat (Admin)', 'chat');
-            const newChatWithProject: ChatWithProjectData = { ...newChat, projects: newProject };
-            setAllChats(prev => [newChatWithProject, ...prev]);
-            setActiveChat(newChatWithProject);
-            await handleSendMessage(prompt, newChatWithProject);
-          }
+          addToast("To start a conversation, please switch to Autonomous Mode.", "info");
         }
       }
     } catch (error) {
@@ -328,16 +400,36 @@ export const AdminPage: React.FC = () => {
        setIsCreatingChat(false);
     }
   };
+  
+    const handleUpdateChat = useCallback(async (chatId: string, updates: Partial<Chat>) => {
+        if (!supabase) return;
+        try {
+          const updatedChat = await updateDbChat(supabase, chatId, updates);
+          setAllChats(prev => prev.map(c => c.id === chatId ? { ...c, ...updatedChat } : c));
+          setActiveChat(prev => (prev?.id === chatId ? { ...prev, ...updatedChat } : prev));
+        } catch (error) { console.error("Failed to update chat", error); }
+    }, [supabase]);
+
+    useEffect(() => {
+        // AI-powered chat naming for admin's autonomous chats
+        if (messages.length === 2 && activeChat && geminiApiKey && messages[0].sender === 'user' && messages[1].sender === 'ai' && activeChat.name === messages[0].text && workspaceMode === 'autonomous') {
+            generateChatTitle(messages[0].text, messages[1].text, geminiApiKey).then(title => {
+                if (activeChat) {
+                    handleUpdateChat(activeChat.id, { name: title });
+                }
+            });
+        }
+    }, [messages, activeChat, geminiApiKey, handleUpdateChat, workspaceMode]);
 
 
   const handleSendMessage = async (text: string, chatToUse: ChatWithProjectData | null = activeChat) => {
-      if (!text.trim() || !supabase || !user || !chatToUse || !chatToUse.projects || !geminiApiKey) return;
+      if (!text.trim() || !supabase || !user || !chatToUse || !geminiApiKey) return;
 
       const tempId = `temp-ai-${Date.now()}`;
       
       try {
         const userMessageData: Omit<Message, 'id' | 'created_at'> = {
-          project_id: chatToUse.projects.id,
+          project_id: chatToUse.project_id,
           chat_id: chatToUse.id,
           user_id: user.id,
           text,
@@ -349,7 +441,7 @@ export const AdminPage: React.FC = () => {
       
         const tempAiMessage: Message = {
             id: tempId,
-            project_id: chatToUse.projects.id,
+            project_id: chatToUse.project_id,
             chat_id: chatToUse.id,
             text: '',
             sender: 'ai',
@@ -362,30 +454,31 @@ export const AdminPage: React.FC = () => {
             let isEvent = false;
             try {
                 const event = JSON.parse(chunk);
-                // Handle special events from the agent, like image generation status
                 if (event.type === 'image_generation_start') {
                     isEvent = true;
                     setMessages(prev => prev.map(m =>
                         m.id === tempId ? { ...m, text: event.text, imageStatus: 'generating' } : m
                     ));
                 }
-            } catch (e) {
-                // Not a JSON event, so it's a regular text chunk
-            }
+            } catch (e) {}
 
             if (!isEvent) {
-                 // Append text chunk for streaming effect
-                setMessages(prev =>
+                 setMessages(prev =>
                     prev.map(m => m.id === tempId ? { ...m, text: m.text + chunk } : m)
                 );
             }
         };
         
+        const projectForAgent = chatToUse.projects ?? {
+            ...DUMMY_AUTONOMOUS_PROJECT,
+            user_id: user.id
+        };
+        
         const { messages: agentMessages, projectUpdate } = await runAgent({
             prompt: text,
             apiKey: geminiApiKey,
-            model: chatToUse.projects.default_model,
-            project: chatToUse.projects,
+            model: projectForAgent.default_model,
+            project: projectForAgent,
             chat: chatToUse,
             user,
             profile,
@@ -395,10 +488,9 @@ export const AdminPage: React.FC = () => {
             workspaceMode
         });
         
-        // Save all AI messages and update state robustly
         const savedAiMessages: Message[] = [];
         for (const messageContent of agentMessages) {
-            const savedAiMessage = await addMessage(supabase, messageContent);
+            const savedAiMessage = await addMessage(supabase, { ...messageContent, project_id: chatToUse.project_id });
             savedAiMessages.push(savedAiMessage);
         }
         
@@ -407,8 +499,8 @@ export const AdminPage: React.FC = () => {
             return [...messagesWithoutTemp, ...savedAiMessages];
         });
 
-        if (projectUpdate && chatToUse.projects) {
-            await handleUpdateProjectForAdmin(chatToUse.projects.id, projectUpdate);
+        if (projectUpdate && chatToUse.project_id) {
+            await handleUpdateProjectForAdmin(chatToUse.project_id, projectUpdate);
         }
 
       } catch (e) {
@@ -420,15 +512,6 @@ export const AdminPage: React.FC = () => {
         setIsLoading(false);
       }
   };
-
-  const handleUpdateChat = useCallback(async (chatId: string, updates: Partial<Chat>) => {
-    if (!supabase) return;
-    try {
-      const updatedChat = await updateDbChat(supabase, chatId, updates);
-      setAllChats(prev => prev.map(c => c.id === chatId ? { ...c, ...updatedChat } : c));
-      setActiveChat(prev => (prev?.id === chatId ? { ...prev, ...updatedChat } : prev));
-    } catch (error) { console.error("Failed to update chat", error); }
-  }, [supabase]);
   
   const handleUpdateProjectForAdmin = async (projectId: string, updates: Partial<Project>) => {
     if (!supabase) return;
@@ -436,10 +519,15 @@ export const AdminPage: React.FC = () => {
         const updatedProject = await updateDbProject(supabase, projectId, updates);
         setAllProjects(prev => prev.map(p => p.id === projectId ? updatedProject : p));
         if (activeCocreatorProject?.id === projectId) {
-            setActiveCocreatorProject(updatedProject);
+            setActiveCocreatorProject(prev => prev ? {...prev, ...updatedProject} : null);
         }
         setAllChats(prev => prev.map(c => c.project_id === projectId && c.projects ? { ...c, projects: { ...c.projects, ...updatedProject }} : c));
-    } catch (error) { throw error; }
+        addToast('Project updated successfully.', 'success');
+    } catch (error) { 
+        const message = error instanceof Error ? error.message : "An unknown error occurred";
+        addToast(`Error updating project: ${message}`, 'error');
+        console.error("Error updating project for admin:", error);
+    }
   };
   
   const handleConfirmDeleteProject = async () => {
@@ -475,16 +563,43 @@ export const AdminPage: React.FC = () => {
             case 'users': return <AdminUsersPage />;
             case 'settings': return <AdminSettingsPage />;
             case 'personal-settings': return <SettingsPage onBack={() => setView('projects')} />;
+            case 'marketplace': return <MarketplacePage />;
+            case 'messages': return <MessagesPage />;
+            case 'discover': return <DiscoverPage />;
             case 'projects':
             default:
                 if (activeCocreatorProject) {
-                    return <CoCreatorWorkspace project={activeCocreatorProject} messages={messages} />;
+                    return <CoCreatorWorkspace 
+                        project={activeCocreatorProject}
+                        chat={activeChat}
+                        geminiApiKey={geminiApiKey}
+                        messages={messages}
+                        isLoadingHistory={isLoading}
+                        isCreatingChat={isCreatingChat}
+                        setMessages={setMessages}
+                        onSendMessage={activeChat ? handleSendMessage : handleFirstMessage}
+                        onChatUpdate={(updates) => activeChat && handleUpdateChat(activeChat.id, updates)}
+                        onActiveProjectUpdate={(updates) => activeCocreatorProject && handleUpdateProjectForAdmin(activeCocreatorProject.id, updates)}
+                        searchQuery={searchQuery}
+                        onSearchResultsChange={setSearchResults}
+                        currentSearchResultMessageIndex={currentSearchResultIndex}
+                        isAdmin={!!isAdmin}
+                        workspaceMode={workspaceMode}
+                        projectType={activeCocreatorProject.project_type === 'website' ? 'website' : 'roblox_game'}
+                        loadingMessage={loadingMessage}
+                    />;
                 }
-                const projectsForHub = allProjects.filter(p => 
-                    !p.name.includes('Autonomous Chats') &&
-                    !p.name.includes('General Chat')
-                );
-                return <ProjectsPage profile={profile} onSelectProject={handleSelectProjectFromHub} projects={projectsForHub} isLoading={isLoading} error={projectsError} onDeleteProject={setProjectToDelete} />;
+                const projectsForHub = allProjects;
+                return <ProjectsPage 
+                    profile={profile} 
+                    onSelectProject={handleSelectProjectFromHub} 
+                    projects={projectsForHub} 
+                    isLoading={isLoading} 
+                    error={projectsError} 
+                    onDeleteProject={setProjectToDelete}
+                    onCreateCoCreatorProject={handleCreateCoCreatorProject}
+                    onCreateAutonomousProject={createProjectFromPrompt}
+                />;
         }
     }
     
@@ -502,25 +617,24 @@ export const AdminPage: React.FC = () => {
             onSendMessage={activeChat ? handleSendMessage : handleFirstMessage}
             onChatUpdate={(updates) => activeChat && handleUpdateChat(activeChat.id, updates)}
             onActiveProjectUpdate={(updates) => activeProject && handleUpdateProjectForAdmin(activeProject.id, updates)}
-            searchQuery={''}
-            onSearchResultsChange={() => {}}
-            currentSearchResultMessageIndex={-1}
+            searchQuery={searchQuery}
+            onSearchResultsChange={setSearchResults}
+            currentSearchResultMessageIndex={currentSearchResultIndex}
             isAdmin={!!isAdmin}
             workspaceMode={workspaceMode}
+            loadingMessage={loadingMessage}
         />
     );
   };
 
   return (
     <div className="flex h-screen w-full bg-bg-primary font-sans">
-      {workspaceMode === 'autonomous' && (
         <LeftSidebar
-          allChats={autonomousChats}
+          allChats={chatsForSidebar}
           activeChatId={activeChat?.id}
           onSelectChat={handleSelectChat}
           onNewChatClick={handleNewChat}
           onUpdateChat={handleUpdateChat}
-          // FIX: Pass the handleDeleteChat function to satisfy the LeftSidebarProps interface.
           onDeleteChat={handleDeleteChat}
           onSettingsClick={handleGoToSettings}
           onGoToHub={handleGoToHub}
@@ -529,8 +643,9 @@ export const AdminPage: React.FC = () => {
           isMobileOpen={isMobileSidebarOpen}
           onMobileClose={() => setIsMobileSidebarOpen(false)}
           workspaceMode={workspaceMode}
+          isAdmin={isAdmin}
+          activeProject={activeCocreatorProject}
         />
-      )}
       <div className="flex-1 flex flex-col overflow-hidden">
         <AdminTopBar 
             currentView={view} 
@@ -542,13 +657,14 @@ export const AdminPage: React.FC = () => {
             workspaceMode={workspaceMode}
             onWorkspaceModeChange={handleWorkspaceModeChange}
             onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
-            isThinking={isLoading || isCreatingChat}
+            isThinking={isThinking}
             onSwitchToAutonomous={handleNewChat}
             onSwitchToCocreator={handleGoToHub}
             onAccountSettingsClick={handleGoToSettings}
             onSignOut={signOut}
+            loadingMessage={loadingMessage}
         />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto px-4">
           {renderContent()}
         </main>
       </div>

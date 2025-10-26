@@ -1,7 +1,9 @@
+import { Session } from '@supabase/supabase-js';
+
 export type WorkspaceMode = 'autonomous' | 'cocreator';
 export type ChatMode = 'chat' | 'plan' | 'build' | 'thinker' | 'super_agent' | 'pro_max';
 export type ProjectPlatform = 'Roblox Studio' | 'Web App';
-export type ProjectType = 'roblox_game' | 'video' | 'story' | 'design' | 'website' | 'presentation' | 'document';
+export type ProjectType = 'roblox_game' | 'video' | 'story' | 'design' | 'website' | 'presentation' | 'document' | 'conversation';
 export type ProjectStatus = 'In Progress' | 'Archived';
 export type MemoryLayer = 'personal' | 'project' | 'codebase' | 'aesthetic';
 
@@ -25,6 +27,11 @@ export interface Profile {
   // Model Preferences
   preferred_image_model: ImageModel;
   preferred_chat_model: ChatModel;
+  ui_theme?: 'light' | 'dark';
+  // Community Fields
+  bio?: string;
+  follower_count?: number;
+  following_count?: number;
 }
 
 export interface AppSettings {
@@ -45,7 +52,7 @@ export interface AppSettings {
 export interface OnboardingPreferences {
   experience_level: 'beginner' | 'intermediate' | 'expert';
   ui_style: 'minimal' | 'standard' | 'advanced';
-  ui_density: 'spacious' | 'comfortable' | 'compact';
+  ui_density: 'comfortable' | 'compact' | 'spacious';
   ui_theme: 'light' | 'dark' | 'auto';
 }
 
@@ -61,11 +68,13 @@ export interface Project {
   project_memory?: string;
   created_at: string;
   updated_at: string;
+  // The new files property for the dynamic file system
+  files?: { [path: string]: { content: string } };
 }
 
 export interface Chat {
   id: string;
-  project_id: string;
+  project_id?: string | null;
   user_id: string;
   name: string;
   mode: ChatMode;
@@ -101,7 +110,7 @@ export interface ThinkerResponse {
 
 export interface Message {
   id: string;
-  project_id: string;
+  project_id?: string | null;
   chat_id: string;
   user_id?: string;
   sender: 'user' | 'ai';
@@ -121,13 +130,12 @@ export interface Message {
 export interface Memory {
     id: string;
     user_id: string;
-    project_id: string | null;
     layer: MemoryLayer;
-    content: string;
-    token_count: number;
-    importance: number;
-    usage_count: number;
-    metadata: Record<string, any>;
+    key: string; // Represents metadata.memory_key
+    value: string; // Represents content
+    importance?: number;
+    usage_count?: number;
+    metadata?: { [key: string]: any };
     created_at: string;
     updated_at: string;
 }
@@ -158,4 +166,63 @@ export interface Asset {
   type: string;
   // This could be a path to a local file, a URL, or raw data
   source: string | File | Blob;
+}
+
+
+// --- NEW COMMUNITY TYPES ---
+
+export type TemplateStatus = 'pending' | 'approved' | 'rejected';
+export type CollaborationRole = 'owner' | 'editor' | 'viewer';
+
+export interface Template {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  files: any; // jsonb
+  preview_image?: string;
+  created_by: string;
+  status: TemplateStatus;
+  downloads: number;
+  stars: number;
+  created_at: string;
+}
+
+export interface PrivateMessage {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  recipient_id: string;
+  content: string;
+  attachments?: any; // jsonb
+  read_at?: string;
+  created_at: string;
+}
+
+export interface Collaboration {
+  id: string;
+  project_id: string;
+  user_id: string;
+  role: CollaborationRole;
+  invited_by: string;
+  accepted_at?: string;
+  created_at: string;
+}
+
+export interface Notification {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  content: string;
+  link?: string;
+  read_at?: string;
+  created_at: string;
+}
+
+export interface Follow {
+  follower_id: string;
+  following_id: string;
+  created_at: string;
 }

@@ -17,6 +17,7 @@ import { validateApiKey } from '../../services/geminiService';
 import { MemoryDashboard } from '../settings/MemoryDashboard';
 import { BillingSettings } from '../settings/BillingSettings';
 import { ModelPreferences } from '../settings/ModelPreferences';
+import { useToast } from '../../hooks/useToast';
 
 type SettingsTab = 'profile' | 'account' | 'appearance' | 'memory' | 'apiKeys' | 'billing' | 'models';
 
@@ -45,15 +46,15 @@ const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
 const Section: React.FC<{ title: string; children: React.ReactNode; description?: string }> = ({ title, children, description }) => (
     <div>
-        <h2 className="text-2xl font-bold text-white">{title}</h2>
+        <h2 className="text-2xl font-bold text-text-primary">{title}</h2>
         <div className="w-16 border-b-2 border-primary-start mt-2 mb-6"></div>
-        {description && <p className="text-gray-400 mb-6 max-w-2xl">{description}</p>}
+        {description && <p className="text-text-secondary mb-6 max-w-2xl">{description}</p>}
         <div className="space-y-6">{children}</div>
     </div>
 );
 
 const SectionCard: React.FC<{children: React.ReactNode}> = ({children}) => (
-    <div className="p-6 bg-bg-secondary/50 rounded-xl border border-white/10">{children}</div>
+    <div className="p-6 bg-bg-secondary/50 rounded-xl border border-border-color">{children}</div>
 );
 
 // Settings Content Components
@@ -82,22 +83,22 @@ const ProfileContent: React.FC = () => {
              <SectionCard>
                 <div className="flex flex-col md:flex-row items-start gap-6">
                     <div className="flex-1">
-                        <label htmlFor="displayName" className="block text-sm font-medium text-gray-300 mb-1">Display Name</label>
-                        <p className="text-xs text-gray-500 mb-2">This name will be displayed throughout the application.</p>
+                        <label htmlFor="displayName" className="block text-sm font-medium text-text-secondary mb-1">Display Name</label>
+                        <p className="text-xs text-text-secondary mb-2">This name will be displayed throughout the application.</p>
                         <input
                             id="displayName"
                             type="text"
                             value={displayName}
                             onChange={(e) => setDisplayName(e.target.value)}
-                            className="w-full px-3 py-2 bg-white/5 border border-white/20 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-start"
+                            className="w-full px-3 py-2 bg-white/5 dark:bg-black/20 border border-border-color rounded-md focus:outline-none focus:ring-1 focus:ring-primary-start text-text-primary"
                         />
                     </div>
                      <div className="w-full md:w-auto">
-                        <label className="block text-sm font-medium text-gray-300 mb-1">Profile Picture</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Profile Picture</label>
                          <img src={profile?.avatar_url || FALLBACK_AVATAR_SVG} alt="Avatar" className="w-24 h-24 rounded-full bg-bg-tertiary" />
                     </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-white/10 flex justify-end">
+                <div className="mt-4 pt-4 border-t border-border-color flex justify-end">
                     <button
                         onClick={handleSaveProfile}
                         disabled={isSaving || saveSuccess || !displayName.trim() || displayName === profile?.roblox_username}
@@ -124,13 +125,13 @@ const AccountContent: React.FC = () => {
     return (
         <Section title="Account" description="Manage your linked accounts and session information.">
             <SectionCard>
-                <h3 className="text-lg font-semibold text-white mb-4">Linked Accounts</h3>
+                <h3 className="text-lg font-semibold text-text-primary mb-4">Linked Accounts</h3>
                  <div className="space-y-3">
                     {isEmailPasswordUser && (
                          <div className="flex items-center justify-between p-3 bg-black/20 rounded-md">
                             <div className="flex items-center gap-4">
-                                <UserCircleIcon className="w-6 h-6 text-gray-400" />
-                                <span className="font-medium text-white">Email & Password</span>
+                                <UserCircleIcon className="w-6 h-6 text-text-secondary" />
+                                <span className="font-medium text-text-primary">Email & Password</span>
                             </div>
                             <span className="text-sm text-success font-semibold px-3 py-1 bg-success/10 rounded-md">Primary</span>
                         </div>
@@ -139,20 +140,20 @@ const AccountContent: React.FC = () => {
                         <div key={name} className="flex items-center justify-between p-3 bg-black/20 rounded-md">
                             <div className="flex items-center gap-4">
                                 <Icon />
-                                <span className="font-medium text-white">{label}</span>
+                                <span className="font-medium text-text-primary">{label}</span>
                                  {name === 'roblox' && !isLinked && (
                                     <span className="text-[10px] font-bold text-cyan-300 bg-cyan-900/50 px-1.5 py-0.5 rounded">SOON</span>
                                 )}
                             </div>
                             {isLinked ? <span className="text-sm text-success font-semibold px-3 py-1 bg-success/10 rounded-md">Linked</span>
-                            : <button onClick={action} disabled={name === 'roblox'} className="px-4 py-1.5 text-sm font-semibold bg-white/10 text-white rounded-md hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">Link Account</button>}
+                            : <button onClick={action} disabled={name === 'roblox'} className="px-4 py-1.5 text-sm font-semibold bg-white/10 text-text-primary rounded-md hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">Link Account</button>}
                         </div>
                     ))}
                 </div>
             </SectionCard>
              <SectionCard>
-                <h3 className="text-lg font-semibold text-white mb-2">Logout</h3>
-                <p className="text-sm text-gray-400 mb-4">This will log you out of your account on this browser.</p>
+                <h3 className="text-lg font-semibold text-text-primary mb-2">Logout</h3>
+                <p className="text-sm text-text-secondary mb-4">This will log you out of your account on this browser.</p>
                 <button
                     onClick={signOut}
                     className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold bg-error/20 text-error hover:bg-error/40 hover:text-red-300 rounded-lg transition-colors"
@@ -201,29 +202,29 @@ const ApiKeysContent: React.FC = () => {
                     <div className="flex items-center gap-4">
                         <div className="p-2 bg-yellow-400/10 rounded-md"><KeyIcon className="w-6 h-6 text-yellow-400"/></div>
                         <div>
-                            <p className="font-medium text-white">Google Gemini API Key</p>
-                            <p className="font-mono text-sm text-gray-400">{maskedApiKey}</p>
+                            <p className="font-medium text-text-primary">Google Gemini API Key</p>
+                            <p className="font-mono text-sm text-text-secondary">{maskedApiKey}</p>
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={() => setIsKeyVisible(!isKeyVisible)} className="px-3 py-1.5 text-xs font-semibold bg-white/10 text-white rounded-md hover:bg-white/20">
+                        <button onClick={() => setIsKeyVisible(!isKeyVisible)} className="px-3 py-1.5 text-xs font-semibold bg-white/10 dark:bg-black/20 text-text-primary rounded-md hover:bg-interactive-hover">
                             {isKeyVisible ? 'Hide' : 'Show'}
                         </button>
-                        <button onClick={copyApiKey} disabled={!geminiApiKey} className="px-3 py-1.5 text-xs font-semibold bg-white/10 text-white rounded-md hover:bg-white/20 disabled:opacity-50">
+                        <button onClick={copyApiKey} disabled={!geminiApiKey} className="px-3 py-1.5 text-xs font-semibold bg-white/10 dark:bg-black/20 text-text-primary rounded-md hover:bg-interactive-hover disabled:opacity-50">
                             Copy
                         </button>
                     </div>
                 </div>
-                <div className="mt-4 pt-4 border-t border-white/20">
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Update API Key</label>
-                    <p className="text-xs text-gray-500 mb-2">Enter a new key to replace the current one.</p>
+                <div className="mt-4 pt-4 border-t border-border-color">
+                    <label className="block text-sm font-medium text-text-secondary mb-1">Update API Key</label>
+                    <p className="text-xs text-text-secondary mb-2">Enter a new key to replace the current one.</p>
                     <div className="flex items-center gap-2">
                         <input
                             type="password"
                             placeholder="Enter new Gemini API key"
                             value={keyToUpdate}
                             onChange={(e) => { setKeyToUpdate(e.target.value); setKeyUpdateError(null); }}
-                            className="flex-grow px-3 py-2 bg-white/5 border border-white/20 rounded-md focus:outline-none focus:ring-1 focus:ring-primary-start"
+                            className="flex-grow px-3 py-2 bg-white/5 dark:bg-black/20 border border-border-color rounded-md focus:outline-none focus:ring-1 focus:ring-primary-start text-text-primary"
                         />
                         <button
                             onClick={handleUpdateKey}
@@ -242,15 +243,50 @@ const ApiKeysContent: React.FC = () => {
     )
 }
 
-const PlaceholderContent: React.FC<{title: string}> = ({title}) => (
-    <Section title={title}>
-        <div className="text-center py-16 text-gray-500">
-             <h3 className="text-lg font-semibold">Coming Soon!</h3>
-            <p>This section is under construction.</p>
-        </div>
-    </Section>
-)
+const AppearanceContent: React.FC = () => {
+    const { profile, updateUserProfile } = useAuth();
+    const { addToast } = useToast();
+    const [isSaving, setIsSaving] = useState(false);
 
+    const currentTheme = profile?.ui_theme || 'dark';
+
+    const handleThemeChange = async (theme: 'light' | 'dark') => {
+        if (theme === currentTheme || isSaving) return;
+        setIsSaving(true);
+        try {
+            await updateUserProfile({ ui_theme: theme });
+            addToast(`Theme set to ${theme.charAt(0).toUpperCase() + theme.slice(1)}`, 'success');
+        } catch (error) {
+            addToast('Failed to save theme preference.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+    
+    return (
+        <Section title="Appearance" description="Customize the look and feel of the application.">
+             <SectionCard>
+                <h3 className="text-lg font-semibold text-text-primary mb-4">Theme</h3>
+                 <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                    <button
+                        onClick={() => handleThemeChange('light')}
+                        className={`w-full p-4 border-2 rounded-lg text-left transition-colors ${currentTheme === 'light' ? 'border-primary-start' : 'border-border-color hover:border-gray-300 dark:hover:border-gray-500'}`}
+                    >
+                        <span className="font-semibold text-text-primary">Light</span>
+                        <p className="text-sm text-text-secondary">A bright, clean interface.</p>
+                    </button>
+                    <button
+                        onClick={() => handleThemeChange('dark')}
+                        className={`w-full p-4 border-2 rounded-lg text-left transition-colors ${currentTheme === 'dark' ? 'border-primary-start' : 'border-border-color hover:border-gray-300 dark:hover:border-gray-500'}`}
+                    >
+                        <span className="font-semibold text-text-primary">Dark</span>
+                        <p className="text-sm text-text-secondary">Easier on the eyes in low light.</p>
+                    </button>
+                </div>
+            </SectionCard>
+        </Section>
+    )
+}
 
 export const SettingsPage: React.FC<{onBack: () => void}> = ({ onBack }) => {
     const { profile } = useAuth();
@@ -274,19 +310,19 @@ export const SettingsPage: React.FC<{onBack: () => void}> = ({ onBack }) => {
             case 'models': return <ModelPreferences />;
             case 'apiKeys': return <ApiKeysContent />;
             case 'memory': return <MemoryDashboard />;
-            case 'appearance': return <PlaceholderContent title="Appearance" />;
+            case 'appearance': return <AppearanceContent />;
             default: return null;
         }
     }
 
     return (
-        <div className="flex h-[calc(100vh-4rem)]"> {/* Full height minus TopBar */}
-            <aside className="w-64 flex-shrink-0 p-6 border-r border-white/10 overflow-y-auto">
+        <div className="flex h-[calc(100vh-4rem)] bg-bg-primary"> {/* Full height minus TopBar */}
+            <aside className="w-64 flex-shrink-0 p-6 border-r border-border-color overflow-y-auto bg-bg-secondary">
                 <div className="flex items-center gap-3 mb-6">
                     <img src={profile?.avatar_url || FALLBACK_AVATAR_SVG} alt="Avatar" className="w-10 h-10 rounded-full bg-bg-tertiary" />
                     <div>
-                        <p className="font-bold text-white truncate">{profile?.roblox_username}</p>
-                        <p className="text-xs text-gray-400">Personal account</p>
+                        <p className="font-bold text-text-primary truncate">{profile?.roblox_username}</p>
+                        <p className="text-xs text-text-secondary">Personal account</p>
                     </div>
                 </div>
                 <nav>
@@ -296,10 +332,10 @@ export const SettingsPage: React.FC<{onBack: () => void}> = ({ onBack }) => {
                                 <button
                                     onClick={() => setActiveTab(item.id)}
                                     className={`w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors text-left ${
-                                        activeTab === item.id ? 'bg-white/10 text-white font-semibold' : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                                        activeTab === item.id ? 'bg-black/10 dark:bg-white/10 text-text-primary font-semibold' : 'text-text-secondary hover:bg-interactive-hover hover:text-text-primary'
                                     }`}
                                 >
-                                    <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-white' : 'text-gray-500'}`} />
+                                    <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-text-primary' : 'text-text-secondary'}`} />
                                     <span>{item.label}</span>
                                 </button>
                             </li>

@@ -4,7 +4,6 @@ import { superAgentInstruction } from './instructions';
 import { runBuildAgent } from '../build/handler';
 import { Message } from '../../types';
 import { getUserFriendlyError } from "../errorUtils";
-import { getMemoriesForContext } from "../../services/databaseService";
 
 // Helper function to parse the AI's special output format
 const parseSuperAgentResponse = (responseText: string) => {
@@ -38,14 +37,13 @@ const mapMessagesToGeminiHistory = (messages: Message[]) => {
 };
 
 export const runSuperAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
-    const { prompt, apiKey, model, project, chat, history, supabase, user } = input;
+    const { prompt, apiKey, model, project, chat, history, memoryContext } = input;
     
     try {
         const ai = new GoogleGenAI({ apiKey });
         
         const geminiHistory = mapMessagesToGeminiHistory(history);
-        const memoryContext = await getMemoriesForContext(supabase, user.id, project.id);
-        const contextPrompt = `MEMORY CONTEXT:\n${memoryContext}\n\nMy request is: "${prompt}". My target platform is: "${project.platform}".`;
+        const contextPrompt = `MEMORY CONTEXT:\n${memoryContext || 'No memory context available.'}\n\nMy request is: "${prompt}". My target platform is: "${project.platform}".`;
         const contents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
 
         // 1. Get the orchestrated response from the Super Agent

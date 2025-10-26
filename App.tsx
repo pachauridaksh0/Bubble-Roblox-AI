@@ -9,6 +9,7 @@ import { CompleteProfilePage } from './components/auth/CompleteProfilePage';
 import { FullScreenError } from './components/ui/FullScreenError';
 import { AdminPage } from './components/admin/AdminPage';
 import { UpdateDisplayNamePage } from './components/auth/UpdateDisplayNamePage';
+import { OnboardingPage } from './components/auth/OnboardingPage';
 
 
 const AppContent: React.FC = () => {
@@ -41,8 +42,8 @@ const AppContent: React.FC = () => {
         return <UpdateDisplayNamePage />;
     }
 
-    if (!profile.onboarding_preferences && false) { // Onboarding disabled for now
-        // return <OnboardingPage />;
+    if (!profile.onboarding_preferences) {
+        return <OnboardingPage />;
     }
     
     if (!geminiApiKey && !isAdmin) {

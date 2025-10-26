@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { Message, Task } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CodeBlock } from '../ui/CodeBlock';
@@ -6,6 +6,9 @@ import { CheckCircleIcon, LightBulbIcon, CodeBracketSquareIcon, EyeIcon, ShareIc
 import { CpuChipIcon, ExclamationTriangleIcon, ChevronDownIcon, ArrowsPointingOutIcon, XMarkIcon, PlusIcon, MinusIcon, ArrowPathIcon, ArrowsPointingInIcon } from '@heroicons/react/24/outline';
 import { ClarificationForm } from './ClarificationForm';
 import { useToast } from '../../hooks/useToast';
+import { useAuth } from '../../contexts/AuthContext';
+import { useState, useRef, useEffect } from 'react';
+import { MessageContent } from './MessageContent';
 
 const ImageLoadingPlaceholder: React.FC = () => {
     return (
@@ -319,6 +322,8 @@ const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition
     const [error, setError] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const { addToast } = useToast();
+    const { profile } = useAuth();
+    const theme = profile?.ui_theme || 'dark';
 
     useEffect(() => {
         const renderMermaid = async () => {
@@ -327,10 +332,12 @@ const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition
             if (trimmedGraphDef && (window as any).mermaid) {
                 const { mermaidAPI } = (window as any).mermaid;
                 try {
+                    // A unique ID is crucial for re-rendering with new themes
+                    const uniqueId = `mermaid-graph-${Date.now()}-${Math.random()}`;
                     await mermaidAPI.parse(trimmedGraphDef);
                     setError('');
 
-                    const { svg } = await mermaidAPI.render(`mermaid-graph-${Date.now()}`, trimmedGraphDef);
+                    const { svg } = await mermaidAPI.render(uniqueId, trimmedGraphDef);
                     setSvgContent(svg);
                 } catch (e) {
                     const errorMessage = "Could not render the visual plan. The diagram syntax returned by the AI appears to be invalid.";
@@ -344,7 +351,7 @@ const MermaidDiagram: React.FC<{ graphDefinition: string }> = ({ graphDefinition
             }
         };
         renderMermaid();
-    }, [graphDefinition, addToast]);
+    }, [graphDefinition, addToast, theme]);
 
     if (error) {
         return (
@@ -393,28 +400,8 @@ interface ChatMessageProps {
   isCurrentResult?: boolean;
   searchQuery?: string;
   isAdmin?: boolean;
+  isTyping?: boolean;
 }
-
-const HighlightedText: React.FC<{ text: string; highlight: string }> = ({ text, highlight }) => {
-    if (!highlight.trim()) {
-        return <>{text}</>;
-    }
-    const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    const parts = text.split(regex);
-    return (
-        <>
-            {parts.map((part, i) =>
-                regex.test(part) ? (
-                    <mark key={i} className="bg-yellow-400 text-black rounded px-0.5 py-0">
-                        {part}
-                    </mark>
-                ) : (
-                    part
-                )
-            )}
-        </>
-    );
-};
 
 const TaskStatusIcon: React.FC<{ status: Task['status'] }> = ({ status }) => {
     if (status === 'in-progress') {
@@ -536,13 +523,13 @@ const PlanExecutionRenderer: React.FC<{ plan: Message['plan'] }> = ({ plan }) =>
 };
 
 
-const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: string) => void, searchQuery?: string }> = ({ message, onExecutePlan, searchQuery }) => {
+const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: string) => void, isTyping?: boolean, searchQuery?: string }> = ({ message, onExecutePlan, isTyping, searchQuery }) => {
     const { plan } = message;
     if (!plan) return null;
 
     const isPlanEmpty = (!plan.features || plan.features.length === 0 || (plan.features.length === 1 && plan.features[0].includes("insufficient"))) && !plan.mermaidGraph;
     if (isPlanEmpty) {
-        return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+        return <MessageContent content={message.text} searchQuery={searchQuery || ''} sender={message.sender} isTyping={isTyping} />;
     }
 
     const hasStartedExecution = plan.tasks.some(t => t.status !== 'pending');
@@ -550,7 +537,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     if (hasStartedExecution) {
         return (
             <>
-                <p><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+                <MessageContent content={message.text} searchQuery={searchQuery || ''} sender={message.sender} isTyping={isTyping} />
                 <PlanExecutionRenderer plan={plan} />
             </>
         );
@@ -558,7 +545,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     
     return (
         <div className="space-y-4">
-            <p><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+            <MessageContent content={message.text} searchQuery={searchQuery || ''} sender={message.sender} isTyping={isTyping} />
             
             <div className="p-4 rounded-lg bg-black/20 border border-white/10">
                 <h4 className="font-semibold text-white mb-2">I'll include the following features:</h4>
@@ -602,7 +589,7 @@ const PlanUIRenderer: React.FC<{ message: Message, onExecutePlan: (messageId: st
     )
 }
 
-const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit: (messageId: string, answers: string[]) => void, searchQuery?: string }> = ({ message, onClarificationSubmit, searchQuery }) => {
+const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit: (messageId: string, answers: string[]) => void, isTyping?: boolean, searchQuery?: string }> = ({ message, onClarificationSubmit, isTyping, searchQuery }) => {
     const { clarification } = message;
     if (!clarification) return null;
 
@@ -611,12 +598,12 @@ const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit:
     }
 
     if (clarification.answers) {
-        return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+        return <MessageContent content={message.text} searchQuery={searchQuery || ''} sender={message.sender} isTyping={isTyping} />;
     }
 
     return (
         <div className="space-y-4">
-            <p><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>
+            <MessageContent content={message.text} searchQuery={searchQuery || ''} sender={message.sender} isTyping={isTyping} />
             <ClarificationForm 
                 questions={clarification.questions}
                 onSubmit={handleSubmit}
@@ -625,11 +612,11 @@ const ClarificationRenderer: React.FC<{ message: Message, onClarificationSubmit:
     )
 }
 
-const ThinkerRenderer: React.FC<{ message: Message; searchQuery?: string }> = ({ message, searchQuery }) => {
+const ThinkerRenderer: React.FC<{ message: Message; isTyping?: boolean; searchQuery?: string }> = ({ message, isTyping, searchQuery }) => {
     const [activeTab, setActiveTab] = useState<'final' | 'standing' | 'opposing'>('final');
     
     if (!message.standing_response || !message.opposing_response) {
-        return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+        return <MessageContent content={message.text} searchQuery={searchQuery || ''} sender={message.sender} isTyping={isTyping} />;
     }
 
     const tabs = [
@@ -646,7 +633,7 @@ const ThinkerRenderer: React.FC<{ message: Message; searchQuery?: string }> = ({
                         <h5 className="font-semibold text-white mb-1">Thought Process</h5>
                         <p className="text-sm text-gray-400 italic mb-3">"{message.standing_response?.thought}"</p>
                         <h5 className="font-semibold text-white mb-2">Proposed Plan</h5>
-                        <p className="whitespace-pre-wrap text-gray-300">{message.standing_response?.response}</p>
+                        <MessageContent content={message.standing_response?.response ?? ''} searchQuery={searchQuery || ''} sender={message.sender} isTyping={false} />
                     </div>
                 );
             case 'opposing':
@@ -655,12 +642,12 @@ const ThinkerRenderer: React.FC<{ message: Message; searchQuery?: string }> = ({
                         <h5 className="font-semibold text-white mb-1">Thought Process</h5>
                         <p className="text-sm text-gray-400 italic mb-3">"{message.opposing_response?.thought}"</p>
                         <h5 className="font-semibold text-white mb-2">Critique & Alternatives</h5>
-                        <p className="whitespace-pre-wrap text-gray-300">{message.opposing_response?.response}</p>
+                        <MessageContent content={message.opposing_response?.response ?? ''} searchQuery={searchQuery || ''} sender={message.sender} isTyping={false} />
                     </div>
                 );
             case 'final':
             default:
-                 return <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery || ''} /></p>;
+                 return <MessageContent content={message.text} searchQuery={searchQuery || ''} sender={message.sender} isTyping={isTyping} />;
         }
     }
 
@@ -693,6 +680,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
     isCurrentResult = false,
     searchQuery = '',
     isAdmin = false,
+    isTyping = false,
 }) => {
   const isUser = message.sender === 'user';
   const [showRaw, setShowRaw] = useState(false);
@@ -711,12 +699,10 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
           initial="hidden"
           animate="visible"
           transition={{ duration: 0.3 }}
-          className={`flex justify-end mb-3 px-4 ${isDimmed ? 'opacity-30' : 'opacity-100'}`}
+          className={`flex justify-end mb-3 ${isDimmed ? 'opacity-30' : 'opacity-100'}`}
         >
-            <div className={`bg-indigo-600 text-white rounded-2xl px-4 py-2 max-w-[60%] break-words shadow-md ${isCurrentResult ? 'ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''}`}>
-                <p className="text-sm whitespace-pre-wrap">
-                    <HighlightedText text={message.text} highlight={searchQuery} />
-                </p>
+            <div className={`bg-zinc-800 text-zinc-100 rounded-2xl px-4 py-3 max-w-[70%] break-words shadow-md ${isCurrentResult ? 'ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''}`}>
+                <MessageContent content={message.text} searchQuery={searchQuery} sender={message.sender} />
             </div>
         </motion.div>
     );
@@ -729,71 +715,77 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({
       initial="hidden"
       animate="visible"
       transition={{ duration: 0.3 }}
-      className={`flex flex-col items-start transition-opacity duration-300 ${isDimmed ? 'opacity-30' : 'opacity-100'}`}
+      className={`flex items-start gap-4 transition-opacity duration-300 ${isDimmed ? 'opacity-30' : 'opacity-100'}`}
     >
-        <div className={`w-full prose ${isCurrentResult ? 'rounded-lg ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''}`}>
-            {showRaw ? (
-                <pre className="p-4 text-xs bg-black/30 rounded-lg overflow-x-auto">
-                    {JSON.stringify(message, null, 2)}
-                </pre>
-            ) : message.imageStatus === 'generating' ? (
-                <ImageLoadingPlaceholder />
-            ) : (
-                <>
-                    {message.standing_response ? (
-                        <ThinkerRenderer message={message} searchQuery={searchQuery} />
-                    ) : message.plan ? (
-                        <PlanUIRenderer message={message} onExecutePlan={onExecutePlan} searchQuery={searchQuery} />
-                    ) : message.clarification ? (
-                        <ClarificationRenderer message={message} onClarificationSubmit={onClarificationSubmit} searchQuery={searchQuery}/>
-                    ) : (
-                        <p className="whitespace-pre-wrap"><HighlightedText text={message.text} highlight={searchQuery} /></p>
-                    )}
-        
-                    {message.image_base64 && (
-                        <>
-                            <div className="mt-4 not-prose">
-                                <button 
-                                    onClick={() => setIsImageModalOpen(true)} 
-                                    className="block w-full group"
-                                    aria-label="Enlarge image"
-                                >
-                                    <img
-                                        src={`data:image/png;base64,${message.image_base64}`}
-                                        alt="Generated content"
-                                        className="rounded-lg max-w-md mx-auto h-auto shadow-lg transition-transform duration-200 group-hover:scale-[1.02] cursor-pointer"
-                                    />
-                                </button>
-                            </div>
-                    
-                            <AnimatePresence>
-                                {isImageModalOpen && (
-                                    <ImageModal 
-                                        src={`data:image/png;base64,${message.image_base64}`}
-                                        onClose={() => setIsImageModalOpen(false)}
-                                    />
-                                )}
-                            </AnimatePresence>
-                        </>
-                    )}
-        
-                    {message.code && (
-                      <div className="not-prose">
-                        <CodeBlock code={message.code} language={message.language || 'lua'} />
-                      </div>
-                    )}
-                </>
-            )}
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center border border-border-color">
+            <span className="text-lg">🫧</span>
         </div>
-      {isAdmin && (
-        <button
-            onClick={() => setShowRaw(!showRaw)}
-            className="mt-2 flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-white bg-white/5 rounded-md transition-colors"
-        >
-            <EyeIcon className="w-3 h-3" />
-            {showRaw ? "Show Formatted" : "Raw Output"}
-        </button>
-      )}
+        <div className={`flex-1 min-w-0 ${isCurrentResult ? 'rounded-lg ring-2 ring-offset-2 ring-offset-bg-primary ring-yellow-400' : ''}`}>
+            <div className="w-full prose">
+                {showRaw ? (
+                    <pre className="p-4 text-xs bg-black/30 rounded-lg overflow-x-auto">
+                        {JSON.stringify(message, null, 2)}
+                    </pre>
+                ) : message.imageStatus === 'generating' ? (
+                    <ImageLoadingPlaceholder />
+                ) : (
+                    <>
+                        {message.standing_response ? (
+                            <ThinkerRenderer message={message} searchQuery={searchQuery} isTyping={isTyping} />
+                        ) : message.plan ? (
+                            <PlanUIRenderer message={message} onExecutePlan={onExecutePlan} searchQuery={searchQuery} isTyping={isTyping} />
+                        ) : message.clarification ? (
+                            <ClarificationRenderer message={message} onClarificationSubmit={onClarificationSubmit} searchQuery={searchQuery} isTyping={isTyping}/>
+                        ) : (
+                            <MessageContent content={message.text} searchQuery={searchQuery} sender={message.sender} isTyping={isTyping} />
+                        )}
+            
+                        {message.image_base64 && (
+                            <>
+                                <div className="mt-4 not-prose">
+                                    <button 
+                                        onClick={() => setIsImageModalOpen(true)} 
+                                        className="block w-full group"
+                                        aria-label="Enlarge image"
+                                    >
+                                        <img
+                                            src={`data:image/png;base64,${message.image_base64}`}
+                                            alt="Generated content"
+                                            className="rounded-lg max-w-md mx-auto h-auto shadow-lg transition-transform duration-200 group-hover:scale-[1.02] cursor-pointer"
+                                        />
+                                    </button>
+                                </div>
+                        
+                                <AnimatePresence>
+                                    {isImageModalOpen && (
+                                        <ImageModal 
+                                            src={`data:image/png;base64,${message.image_base64}`}
+                                            onClose={() => setIsImageModalOpen(false)}
+                                        />
+                                    )}
+                                </AnimatePresence>
+                            </>
+                        )}
+            
+                        {/* Standalone code blocks for backward compatibility */}
+                        {message.code && !message.text.includes('```') && (
+                          <div className="not-prose">
+                            <CodeBlock code={message.code} language={message.language || 'lua'} />
+                          </div>
+                        )}
+                    </>
+                )}
+            </div>
+          {isAdmin && (
+            <button
+                onClick={() => setShowRaw(!showRaw)}
+                className="mt-2 flex items-center gap-1.5 px-2 py-1 text-xs text-gray-500 hover:text-white bg-white/5 rounded-md transition-colors"
+            >
+                <EyeIcon className="w-3 h-3" />
+                {showRaw ? "Show Formatted" : "Raw Output"}
+            </button>
+          )}
+        </div>
     </motion.div>
   );
 };

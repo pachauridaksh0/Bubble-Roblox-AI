@@ -1,39 +1,45 @@
 import React from 'react';
-import { Project, Message } from '../../types';
-import { IdeWorkspace } from './IdeWorkspace';
+import { Project } from '../../types';
+import { IdeWorkspaceProps } from './shared/IdeWorkspace';
+import { RobloxWorkspace } from './roblox/RobloxWorkspace';
+import { WebAppWorkspace } from './webapp/WebAppWorkspace';
+import { StoryWorkspace } from './story/StoryWorkspace';
+import { VideoWorkspace } from './video/VideoWorkspace';
+import { DesignWorkspace } from './design/DesignWorkspace';
+import { PresentationWorkspace } from './presentation/PresentationWorkspace';
+import { DocumentWorkspace } from './document/DocumentWorkspace';
 
-interface CoCreatorWorkspaceProps {
+interface CoCreatorWorkspaceProps extends IdeWorkspaceProps {
     project: Project;
-    messages: Message[];
 }
 
-const PlaceholderPlayground: React.FC<{ type: string }> = ({ type }) => (
-    <div className="flex items-center justify-center h-full bg-bg-primary text-white">
-        <div className="text-center">
-            <h2 className="text-2xl font-bold">This is the {type} Playground</h2>
-            <p className="text-gray-400">This specialized workspace is coming soon!</p>
-        </div>
-    </div>
-);
-
-export const CoCreatorWorkspace: React.FC<CoCreatorWorkspaceProps> = ({ project, messages }) => {
+export const CoCreatorWorkspace: React.FC<CoCreatorWorkspaceProps> = (props) => {
+    const { project } = props;
 
     switch (project.project_type) {
-        case 'website':
-            return <IdeWorkspace projectType="website" messages={messages} />;
         case 'roblox_game':
-            return <IdeWorkspace projectType="roblox_game" messages={messages} />;
-        case 'video':
-            return <PlaceholderPlayground type="Video" />;
+            return <RobloxWorkspace {...props} />;
+        case 'website':
+            return <WebAppWorkspace {...props} />;
         case 'story':
-            return <PlaceholderPlayground type="Story/Novel" />;
+            return <StoryWorkspace {...props} />;
+        case 'video':
+            return <VideoWorkspace {...props} />;
         case 'design':
-            return <PlaceholderPlayground type="Design/Image" />;
+            return <DesignWorkspace {...props} />;
         case 'presentation':
-            return <PlaceholderPlayground type="Presentation" />;
+            return <PresentationWorkspace {...props} />;
         case 'document':
-            return <PlaceholderPlayground type="Document" />;
+            return <DocumentWorkspace {...props} />;
         default:
-             return <div className="flex items-center justify-center h-full">Select a project type to begin.</div>;
+            // Fallback for conversation or unknown types
+            return (
+                 <div className="flex items-center justify-center h-full text-center p-8 text-gray-500 bg-bg-primary">
+                    <div>
+                        <h2 className="text-xl font-semibold text-gray-300">Unsupported Project Type</h2>
+                        <p>This project type ('{project.project_type}') does not have a dedicated workspace.</p>
+                    </div>
+                </div>
+            );
     }
 };

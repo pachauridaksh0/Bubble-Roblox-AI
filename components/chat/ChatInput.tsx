@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { PaperAirplaneIcon, ChevronDownIcon, SparklesIcon, PlusIcon } from '@heroicons/react/24/solid';
 import { Chat, ChatMode, WorkspaceMode } from '../../types';
@@ -14,6 +15,7 @@ interface ChatInputProps {
   isAdmin: boolean;
   workspaceMode: WorkspaceMode;
   isInitialView: boolean;
+  loadingMessage: string;
 }
 
 const placeholders: Record<WorkspaceMode, string[]> = {
@@ -30,7 +32,7 @@ const placeholders: Record<WorkspaceMode, string[]> = {
   ],
 };
 
-export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, chat, onChatUpdate, isAdmin, workspaceMode, isInitialView }) => {
+export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, chat, onChatUpdate, isAdmin, workspaceMode, isInitialView, loadingMessage }) => {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isModeSelectorOpen, setModeSelectorOpen] = useState(false);
@@ -102,7 +104,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
       modesToShow.push('pro_max');
   }
   
-  const containerClasses = `w-full ${isInitialView ? 'pb-8' : 'px-4 pb-4 md:px-0 md:pb-6'}`;
+  const containerClasses = `w-full ${isInitialView ? 'pb-8' : 'px-4 pb-4'}`;
   const formWrapperClasses = `relative ${isInitialView ? 'max-w-xl' : 'max-w-4xl'} mx-auto`;
   const formClasses = `relative bg-bg-tertiary border border-border-color rounded-2xl shadow-2xl flex items-end p-2 gap-2`;
 
@@ -114,16 +116,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
           </div>
         )}
         <div className={formWrapperClasses}>
+            <AnimatePresence>
+                {isLoading && (
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-bg-tertiary/70 backdrop-blur-sm flex items-center justify-center rounded-2xl z-10"
+                >
+                    <div className="flex items-center gap-3 text-gray-300 font-medium">
+                        <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <span>{loadingMessage}</span>
+                    </div>
+                </motion.div>
+                )}
+            </AnimatePresence>
           <form
             onSubmit={handleSubmit}
             className={formClasses}
           >
-            {workspaceMode === 'cocreator' && chat && onChatUpdate && (
+            {/* Show selector ONLY in co-creator mode when a chat is active */}
+            {chat && onChatUpdate && workspaceMode === 'cocreator' && (
                  <div ref={modeSelectorRef} className="relative flex-shrink-0">
-                    <button type="button" onClick={() => setModeSelectorOpen(prev => !prev)} className="flex items-center gap-2 p-2 rounded-lg hover:bg-black/20 transition-colors">
-                        {currentModeDetails.icon}
-                        <ChevronDownIcon className="w-4 h-4 text-gray-400" />
-                    </button>
                     <AnimatePresence>
                         {isModeSelectorOpen && (
                             <motion.div
@@ -148,8 +162,22 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
                             </motion.div>
                         )}
                     </AnimatePresence>
+
+                    <button 
+                        type="button" 
+                        onClick={() => setModeSelectorOpen(prev => !prev)} 
+                        className="flex items-center gap-1 p-2 rounded-lg hover:bg-black/20 transition-colors"
+                        title={`Current agent: ${currentModeDetails.name}`}
+                    >
+                        {currentModeDetails.icon}
+                        <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                    </button>
                  </div>
             )}
+            
+            {/* Placeholder to align items correctly when selector is hidden */}
+            {!chat && workspaceMode === 'cocreator' && <div className="flex-shrink-0 w-8 h-8"></div>}
+
              <button
                 type="button"
                 className="flex-shrink-0 w-8 h-8 rounded-full bg-black/20 flex items-center justify-center text-gray-400 hover:text-white transition-colors"

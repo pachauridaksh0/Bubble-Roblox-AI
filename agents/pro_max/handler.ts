@@ -4,7 +4,6 @@ import { clarificationInstruction, proMaxPlanGenerationInstruction } from './ins
 import { planSchema } from '../build/schemas'; // Re-use schemas
 import { Task, Message } from '../../types';
 import { getUserFriendlyError } from "../errorUtils";
-import { getMemoriesForContext } from "../../services/databaseService";
 
 interface ClarificationQuestionsResponse {
     questions: string[];
@@ -41,12 +40,11 @@ const proMaxClarificationSchema = {
 };
 
 const generateClarifyingQuestions = async (input: AgentInput): Promise<{ response: ClarificationQuestionsResponse, rawText: string }> => {
-    const { prompt, apiKey, model, history, supabase, user } = input;
+    const { prompt, apiKey, model, history, memoryContext } = input;
     const ai = new GoogleGenAI({ apiKey });
 
     const geminiHistory = mapMessagesToGeminiHistory(history);
-    const memoryContext = await getMemoriesForContext(supabase, user.id, input.project.id);
-    const contextPrompt = `MEMORY CONTEXT:\n${memoryContext}\n\nUSER REQUEST: "${prompt}"`;
+    const contextPrompt = `MEMORY CONTEXT:\n${memoryContext || 'No memory context available.'}\n\nUSER REQUEST: "${prompt}"`;
     const contents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
 
     const response = await ai.models.generateContent({
@@ -65,13 +63,12 @@ const generateClarifyingQuestions = async (input: AgentInput): Promise<{ respons
 };
 
 const generatePlan = async (input: AgentInput): Promise<{ response: PlanResponse, rawText: string }> => {
-    const { prompt, answers, apiKey, model, history, supabase, user } = input;
+    const { prompt, answers, apiKey, model, history, memoryContext } = input;
     const ai = new GoogleGenAI({ apiKey });
     const maxRetries = 3;
     let lastError: Error | null = null;
 
-    const memoryContext = await getMemoriesForContext(supabase, user.id, input.project.id);
-    let fullPrompt = `MEMORY CONTEXT:\n${memoryContext}\n\nUser request: "${prompt}"`;
+    let fullPrompt = `MEMORY CONTEXT:\n${memoryContext || 'No memory context available.'}\n\nUser request: "${prompt}"`;
     if (answers) {
         fullPrompt += "\n\nUser's answers to clarifying questions:\n" + answers.map((a, i) => `${i + 1}. ${a}`).join("\n");
     }

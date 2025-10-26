@@ -1,15 +1,14 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { XMarkIcon, ExclamationTriangleIcon, ChevronLeftIcon } from '@heroicons/react/24/solid';
 import { ProjectPlatform, ProjectType } from '../../types';
-import { ComputerDesktopIcon, FilmIcon, PaintBrushIcon, BookOpenIcon, CubeIcon, ChartPieIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { ComputerDesktopIcon, FilmIcon, PaintBrushIcon, BookOpenIcon, CubeIcon, ChartPieIcon, DocumentTextIcon, SparklesIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 
 interface NewProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreateProject: (name: string, platform: ProjectPlatform, projectType: ProjectType) => Promise<void>;
+  onSwitchToAutonomous: () => void;
   isAdmin?: boolean;
 }
 
@@ -23,7 +22,7 @@ const projectTypeOptions: { id: ProjectType; name: string; icon: React.ReactElem
     { id: 'document', name: 'Document', icon: <DocumentTextIcon className="w-8 h-8"/>, platform: 'Web App' },
 ];
 
-export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onCreateProject, isAdmin = false }) => {
+export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClose, onCreateProject, onSwitchToAutonomous, isAdmin = false }) => {
   const [step, setStep] = useState(1);
   const [projectName, setProjectName] = useState('');
   const [projectType, setProjectType] = useState<ProjectType>('roblox_game');
@@ -59,12 +58,41 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClos
   };
 
   const renderStepContent = () => {
-    if (step === 1) {
-      return (
+    switch (step) {
+      case 1:
+        return (
+          <div>
+            <h2 className="text-2xl font-bold text-white mb-2 text-center">Create New Project</h2>
+            <p className="text-gray-400 mb-6 text-center">How would you like to start?</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <motion.div
+                onClick={onSwitchToAutonomous}
+                className="p-6 border-2 border-white/20 hover:border-primary-start/50 bg-white/5 rounded-xl flex flex-col items-center justify-center gap-3 cursor-pointer text-center"
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}
+              >
+                  <SparklesIcon className="w-10 h-10 text-primary-start" />
+                  <h3 className="font-bold text-white text-lg">Autonomous</h3>
+                  <p className="text-sm text-gray-400">Describe your idea, and the AI will generate the project for you.</p>
+              </motion.div>
+              <motion.div
+                onClick={() => setStep(2)}
+                className="p-6 border-2 border-white/20 hover:border-primary-start/50 bg-white/5 rounded-xl flex flex-col items-center justify-center gap-3 cursor-pointer text-center"
+                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }}
+              >
+                  <UserGroupIcon className="w-10 h-10 text-primary-start" />
+                  <h3 className="font-bold text-white text-lg">Co-Creator</h3>
+                  <p className="text-sm text-gray-400">You guide the AI step-by-step in a collaborative workspace.</p>
+              </motion.div>
+            </div>
+             <p className="text-center text-sm text-gray-500 mt-6">Or, start from a pre-built project by visiting the <button className="underline hover:text-primary-start">Community Marketplace</button>.</p>
+          </div>
+        );
+      case 2:
+       return (
         <div>
-          <h2 className="text-2xl font-bold text-white mb-2">Create New Project</h2>
-          <p className="text-gray-400 mb-6">Let's start with a name for your new creation.</p>
-          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-white mb-2">Setup Co-Creator Project</h2>
+            <p className="text-gray-400 mb-6">Choose a project type to open the right workspace.</p>
+            <div className="mb-4">
               <label htmlFor="projectName" className="block text-sm font-medium text-gray-300 mb-2">Project Name</label>
               <input
                 type="text"
@@ -77,31 +105,15 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClos
                 autoFocus
               />
           </div>
-          <button
-            onClick={() => setStep(2)}
-            disabled={!projectName.trim()}
-            className="w-full h-[51px] flex items-center justify-center px-4 py-3 bg-gradient-to-r from-primary-start to-primary-end text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Continue
-          </button>
-        </div>
-      );
-    }
-    
-    if (step === 2) {
-       return (
-        <div>
-            <h2 className="text-2xl font-bold text-white mb-2">What are we creating?</h2>
-            <p className="text-gray-400 mb-6">Choose a project type to open the right workspace.</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 {projectTypeOptions.map(option => (
                     <div
                         key={option.id}
                         onClick={() => setProjectType(option.id)}
-                        className={`p-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center ${projectType === option.id ? 'border-primary-start bg-primary-start/10' : 'border-white/20 hover:border-white/40 bg-white/5'}`}
+                        className={`p-3 border-2 rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center ${projectType === option.id ? 'border-primary-start bg-primary-start/10' : 'border-white/20 hover:border-white/40 bg-white/5'}`}
                     >
                        <div className="text-primary-start">{option.icon}</div>
-                       <h3 className="font-semibold text-white text-sm">{option.name}</h3>
+                       <h3 className="font-semibold text-white text-xs">{option.name}</h3>
                     </div>
                 ))}
             </div>
@@ -113,7 +125,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({ isOpen, onClos
             )}
             <button
               onClick={handleSubmit}
-              disabled={isCreating}
+              disabled={isCreating || !projectName.trim()}
               className="w-full h-[51px] flex items-center justify-center px-4 py-3 bg-gradient-to-r from-primary-start to-primary-end text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-primary-start/20 transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isCreating ? (

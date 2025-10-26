@@ -1,9 +1,12 @@
+
+
 import React, { useState, useEffect, useRef } from 'react';
-import { MagnifyingGlassIcon, XMarkIcon, ChevronUpIcon, ChevronDownIcon, Cog6ToothIcon, ComputerDesktopIcon, Bars3Icon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, XMarkIcon, Cog6ToothIcon, Bars3Icon, BuildingStorefrontIcon, ChatBubbleBottomCenterTextIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import { UserDropdown } from './UserDropdown';
 import { WorkspaceMode } from '../../types';
-import { WorkspaceModeSelector } from '../ui/WorkspaceModeSelector';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDownIcon } from '@heroicons/react/24/outline';
 
 interface SearchBarProps {
     searchQuery: string;
@@ -30,6 +33,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ searchQuery, onSearchQueryChange 
     );
 };
 
+type HubView = 'projects' | 'marketplace' | 'messages' | 'discover';
+
 interface TopBarProps {
   onGoToHub: () => void;
   onAccountSettingsClick: () => void;
@@ -45,9 +50,35 @@ interface TopBarProps {
   isThinking?: boolean;
   onSwitchToAutonomous: () => void;
   onSwitchToCocreator: () => void;
+  hubView: HubView;
+  onHubViewChange: (view: HubView) => void;
+  loadingMessage: string;
 }
 
 const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
+
+const HubNavigation: React.FC<{ hubView: HubView, onHubViewChange: (view: HubView) => void }> = ({ hubView, onHubViewChange }) => {
+    const navItems = [
+        { id: 'projects' as HubView, label: 'My Projects', icon: <CubeIcon className="w-5 h-5" /> },
+        { id: 'marketplace' as HubView, label: 'Marketplace', icon: <BuildingStorefrontIcon className="w-5 h-5" /> },
+        { id: 'messages' as HubView, label: 'Messages', icon: <ChatBubbleBottomCenterTextIcon className="w-5 h-5" /> },
+        { id: 'discover' as HubView, label: 'Discover', icon: <UsersIcon className="w-5 h-5" /> },
+    ];
+    
+    return (
+        <div className="flex items-center gap-2 p-1 bg-black/20 rounded-lg">
+            {navItems.map(item => (
+                <button
+                    key={item.id}
+                    onClick={() => onHubViewChange(item.id)}
+                    className={`px-3 py-2 text-sm font-medium rounded-md transition-colors flex items-center gap-2 ${hubView === item.id ? 'bg-white/10 text-white' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
+                >
+                    {item.label}
+                </button>
+            ))}
+        </div>
+    );
+};
 
 export const TopBar: React.FC<TopBarProps> = ({ 
     onGoToHub, 
@@ -63,11 +94,16 @@ export const TopBar: React.FC<TopBarProps> = ({
     onMobileMenuClick,
     isThinking = false,
     onSwitchToAutonomous,
-    onSwitchToCocreator
+    onSwitchToCocreator,
+    hubView,
+    onHubViewChange,
+    loadingMessage,
 }) => {
   const { profile, user, loading } = useAuth();
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isHubDropdownOpen, setHubDropdownOpen] = useState(false);
+  const hubDropdownRef = useRef<HTMLDivElement>(null);
   
   const displayName = profile?.roblox_username || user?.email || 'User';
   const avatarUrl = profile?.avatar_url;
@@ -77,41 +113,23 @@ export const TopBar: React.FC<TopBarProps> = ({
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setDropdownOpen(false);
       }
+      if (hubDropdownRef.current && !hubDropdownRef.current.contains(event.target as Node)) {
+        setHubDropdownOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
   
-  if (workspaceMode === 'autonomous') {
-    return (
-      <header className="relative flex-shrink-0 h-16 flex items-center justify-between md:justify-center px-4 md:px-8 border-b border-border-color bg-bg-primary">
-          <div className="md:hidden">
-              <button onClick={onMobileMenuClick} className="p-2 text-gray-400 hover:text-white" aria-label="Open menu">
-                  <Bars3Icon className="w-6 h-6" />
-              </button>
-          </div>
-          <div className="hidden md:flex items-center gap-2 text-sm text-gray-400">
-            {isThinking ? (
-                <>
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse [animation-delay:-0.3s]"></div>
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse [animation-delay:-0.15s]"></div>
-                    <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                    <span>Bubble is thinking...</span>
-                </>
-            ) : (
-                <>
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                    <span>Bubble is ready</span>
-                </>
-            )}
-          </div>
-           {/* Placeholder to balance flexbox on mobile */}
-          <div className="w-8 md:hidden" />
-      </header>
-    );
-  }
+    const hubNavItems = [
+        { id: 'projects' as HubView, label: 'My Projects', icon: <CubeIcon className="w-5 h-5" /> },
+        { id: 'marketplace' as HubView, label: 'Marketplace', icon: <BuildingStorefrontIcon className="w-5 h-5" /> },
+        { id: 'messages' as HubView, label: 'Messages', icon: <ChatBubbleBottomCenterTextIcon className="w-5 h-5" /> },
+        { id: 'discover' as HubView, label: 'Discover', icon: <UsersIcon className="w-5 h-5" /> },
+    ];
+    
+    const currentHubItem = hubNavItems.find(item => item.id === hubView);
 
-  // Co-Creator mode (Hub or inside a project)
   return (
     <header className="relative flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border-color bg-bg-primary">
       <div className="flex items-center gap-2 md:gap-4 flex-shrink min-w-0">
@@ -124,7 +142,49 @@ export const TopBar: React.FC<TopBarProps> = ({
             <span className="text-2xl">🫧</span>
             <span className="hidden sm:inline text-xl font-bold tracking-wider text-white">Bubble</span>
         </button>
-        {activeProjectName && (
+        
+        {!isProjectView && workspaceMode === 'cocreator' && (
+            <>
+              {/* Desktop Hub Nav */}
+              <div className="hidden lg:block">
+                <HubNavigation hubView={hubView} onHubViewChange={onHubViewChange} />
+              </div>
+              {/* Mobile Hub Dropdown */}
+              <div className="relative lg:hidden ml-2" ref={hubDropdownRef}>
+                  <button
+                      onClick={() => setHubDropdownOpen(p => !p)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg bg-black/20 text-white"
+                  >
+                      {currentHubItem?.icon}
+                      <span className="hidden sm:inline">{currentHubItem?.label}</span>
+                      <ChevronDownIcon className="w-4 h-4" />
+                  </button>
+                  <AnimatePresence>
+                      {isHubDropdownOpen && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className="absolute left-0 top-full mt-2 w-56 bg-bg-secondary/80 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 p-2"
+                          >
+                              {hubNavItems.map(item => (
+                                  <button
+                                      key={item.id}
+                                      onClick={() => { onHubViewChange(item.id); setHubDropdownOpen(false); }}
+                                      className={`w-full flex items-center gap-3 p-2 text-left rounded-md transition-colors ${hubView === item.id ? 'bg-white/10 text-white' : 'text-gray-300 hover:bg-white/5'}`}
+                                  >
+                                      {item.icon}
+                                      <span>{item.label}</span>
+                                  </button>
+                              ))}
+                          </motion.div>
+                      )}
+                  </AnimatePresence>
+              </div>
+            </>
+        )}
+        
+        {isProjectView && activeProjectName && (
             <>
                 <div className="h-6 w-px bg-border-color hidden sm:block"></div>
                 <div className="hidden sm:flex items-center gap-2 min-w-0">
@@ -138,7 +198,7 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       <div className="flex items-center space-x-2 md:space-x-4">
-        {activeProjectName && (
+        {isProjectView && activeProjectName && (
             <SearchBar
                 searchQuery={searchQuery}
                 onSearchQueryChange={onSearchQueryChange}
@@ -173,3 +233,10 @@ export const TopBar: React.FC<TopBarProps> = ({
     </header>
   );
 };
+
+// Dummy CubeIcon for HubNavigation
+const CubeIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9.75v9.75" />
+    </svg>
+);

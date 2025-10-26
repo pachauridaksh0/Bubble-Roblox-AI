@@ -1,83 +1,125 @@
 import { GoogleGenAI } from "@google/genai";
 import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
-import { memoryCreationInstruction } from './instructions';
-import { planAgentSchema } from './schemas';
-import { Message } from '../../types';
+import { planAgentInstruction } from './instructions';
+import { agentResponseSchema } from '../build/schemas'; // Re-use the comprehensive schema from build agent
+import { Task, Message } from '../../types';
 import { getUserFriendlyError } from "../errorUtils";
-import { getMemoriesForContext } from "../../services/databaseService";
 
 interface AgentResponse {
-    projectMemory?: string;
     responseText?: string;
+    clarification?: {
+        prompt: string;
+        questions: string[];
+    };
+    plan?: {
+        title: string;
+        introduction: string;
+        features: string[];
+        mermaidGraph: string;
+        tasks: string[];
+    };
 }
 
-const mapMessagesToGeminiHistory = (messages: Message[]) => {
-  return messages.map(msg => ({
-    role: msg.sender === 'user' ? 'user' : 'model' as 'user' | 'model',
-    parts: [{ text: msg.text }],
-  })).filter(msg => msg.parts[0].text.trim() !== '');
+const sanitizeMermaidGraph = (graph: string): string => {
+    if (!graph) return '';
+    return graph.split('\n').map(line => {
+        const trimmedLine = line.trim();
+        const sanitized = trimmedLine.replace(/(\]|\))\s*([A-Za-z0-9_]+)$/, '$1');
+        return sanitized;
+    }).join('\n');
 };
 
+
 export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
-    const { project, chat, prompt, apiKey, model, history, supabase, user, onStreamChunk } = input;
+    const { profile, project, chat, prompt, apiKey, model, history, answers, memoryContext, onStreamChunk } = input;
     const ai = new GoogleGenAI({ apiKey });
+    const uiStyle = profile?.onboarding_preferences?.ui_style ?? 'standard';
 
-    onStreamChunk?.("Thinking about how to update our plan... 🤔");
+    onStreamChunk?.("Analyzing your request to create a plan... ✍️");
 
-    const geminiHistory = mapMessagesToGeminiHistory(history);
+    let fullPrompt = `Target Platform: ${project.platform}\n\nUser request: "${prompt}"`;
+    if (answers) {
+        fullPrompt += "\n\nUser's answers to clarifying questions:\n" + answers.map((a, i) => `${i + 1}. ${a}`).join("\n");
+    }
+
+    const geminiHistory = history.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'model' as 'user' | 'model',
+        parts: [{ text: msg.text }],
+    })).filter(msg => msg.parts[0].text.trim() !== '');
+
+    const contents = [...geminiHistory, { role: 'user', parts: [{ text: fullPrompt }] }];
     
-    const memoryContext = await getMemoriesForContext(supabase, user.id, project.id);
-    const contextPrompt = `Current Memory Context:\n"""\n${memoryContext}\n"""\n\nUser request: "${prompt}"`;
-    const contents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];
+    const systemInstruction = `${planAgentInstruction}\n\nMEMORY CONTEXT:\n${memoryContext || 'No memory context available.'}`;
 
     try {
         const response = await ai.models.generateContent({
             model,
             contents: contents,
             config: {
-                systemInstruction: memoryCreationInstruction,
+                systemInstruction: systemInstruction,
                 responseMimeType: "application/json",
-                responseSchema: planAgentSchema,
-                temperature: 0.3,
-                topP: 0.9,
+                responseSchema: agentResponseSchema,
+                temperature: 0.7,
+                topP: 0.95,
             }
         });
 
         const rawResponseText = response.text.trim();
         const agentResponse = JSON.parse(rawResponseText) as AgentResponse;
+        let messages: AgentOutput = [];
 
-        if (agentResponse.projectMemory) {
-            const projectMemory = agentResponse.projectMemory;
-            const confirmationMessage: AgentOutput[0] = {
-                project_id: project.id,
-                chat_id: chat.id,
-                sender: 'ai',
-                text: "Got it. I've updated the project's memory with our new plan. You can now use Chat mode for general questions or Build mode to start creating features, and I'll remember this context.",
-            };
-            if (input.profile?.role === 'admin') {
-                confirmationMessage.raw_ai_response = rawResponseText;
-            }
-
-            return {
-                messages: [confirmationMessage],
-                projectUpdate: {
-                    project_memory: projectMemory
-                }
-            };
-        } else if (agentResponse.responseText) {
-            const conversationalMessage: AgentOutput[0] = {
+        if (agentResponse.responseText) {
+            const message: AgentOutput[0] = {
                 project_id: project.id,
                 chat_id: chat.id,
                 sender: 'ai',
                 text: agentResponse.responseText,
             };
             if (input.profile?.role === 'admin') {
-                conversationalMessage.raw_ai_response = rawResponseText;
+                message.raw_ai_response = rawResponseText;
             }
-            return { messages: [conversationalMessage] };
-        } else {
-             throw new Error("The AI returned an unexpected response format.");
+            messages.push(message);
         }
+        else if (agentResponse.clarification) {
+             const clarificationLeadIn = "Sounds like a plan! I just have a couple of quick questions to make sure I get the design right:";
+                
+            const message: AgentOutput[0] = {
+                project_id: project.id,
+                chat_id: chat.id,
+                sender: 'ai',
+                text: clarificationLeadIn,
+                clarification: agentResponse.clarification,
+            };
+            if (input.profile?.role === 'admin') {
+                message.raw_ai_response = rawResponseText;
+            }
+            messages.push(message);
+        }
+        else if (agentResponse.plan) {
+            const planTasks: Task[] = agentResponse.plan.tasks.map(t => ({ text: t, status: 'pending' }));
+            const message: AgentOutput[0] = {
+                project_id: project.id,
+                chat_id: chat.id,
+                sender: 'ai',
+                text: agentResponse.plan.introduction,
+                plan: {
+                    title: agentResponse.plan.title,
+                    features: agentResponse.plan.features,
+                    mermaidGraph: sanitizeMermaidGraph(agentResponse.plan.mermaidGraph),
+                    tasks: planTasks,
+                    isComplete: false,
+                },
+            };
+             if (input.profile?.role === 'admin') {
+                message.raw_ai_response = rawResponseText;
+            }
+            messages.push(message);
+        }
+        else {
+            throw new Error("The AI returned an unexpected or empty response for the plan.");
+        }
+        
+        return { messages };
 
     } catch (error) {
         console.error("Error in runPlanAgent:", error);
@@ -86,7 +128,7 @@ export const runPlanAgent = async (input: AgentInput): Promise<AgentExecutionRes
             project_id: project.id,
             chat_id: chat.id,
             sender: 'ai',
-            text: `I'm sorry, but I encountered an error while trying to manage the project memory. ${errorMessage}`
+            text: `I'm sorry, but I encountered an error while trying to create a plan. ${errorMessage}`
         };
         return { messages: [fallbackMessage] };
     }

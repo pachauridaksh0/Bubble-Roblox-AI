@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Message, Project, Chat, WorkspaceMode } from '../../types';
 import { ChatMessage } from './ChatMessage';
@@ -23,6 +24,7 @@ interface ChatViewProps {
   currentSearchResultMessageIndex: number;
   isAdmin: boolean;
   workspaceMode: WorkspaceMode;
+  loadingMessage: string;
 }
 
 const AutonomousInitialView: React.FC<{ onQuickStart: (prompt: string) => void }> = ({ onQuickStart }) => (
@@ -57,6 +59,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     currentSearchResultMessageIndex,
     isAdmin,
     workspaceMode,
+    loadingMessage,
 }) => {
   const { supabase } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -109,8 +112,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-bg-primary">
-      <div className={`flex-1 overflow-y-auto flex flex-col items-center ${isInitialView ? 'justify-center' : 'p-4 md:p-6'}`}>
-        <div className="w-full max-w-4xl flex-1">
+      <div className={`flex-1 overflow-y-auto flex flex-col ${isInitialView ? 'justify-center' : 'p-4'}`}>
+        <div className="w-full max-w-4xl flex-1 mx-auto">
             {isLoading && messages.length === 0 && (
                 <div className="flex items-center justify-center h-full">
                     <svg className="animate-spin h-8 w-8 text-primary-start" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -127,19 +130,25 @@ export const ChatView: React.FC<ChatViewProps> = ({
             {!isInitialView && (
                 <div className="space-y-6">
                     <AnimatePresence initial={false}>
-                      {messages.map((msg, index) => (
-                        <div key={msg.id} ref={el => { messageRefs.current[index] = el; }}>
-                            <ChatMessage 
-                                message={msg} 
-                                onExecutePlan={handleExecutePlan}
-                                onClarificationSubmit={handleClarificationSubmit}
-                                isDimmed={searchQuery.trim() !== '' && !msg.text.toLowerCase().includes(searchQuery.toLowerCase())}
-                                isCurrentResult={index === currentSearchResultMessageIndex}
-                                searchQuery={searchQuery}
-                                isAdmin={isAdmin}
-                            />
-                        </div>
-                      ))}
+                      {messages.map((msg, index) => {
+                        const isLastMessage = index === messages.length - 1;
+                        const isAiResponding = isLastMessage && isLoading && msg.sender === 'ai';
+                        
+                        return (
+                            <div key={msg.id} ref={el => { messageRefs.current[index] = el; }}>
+                                <ChatMessage 
+                                    message={msg} 
+                                    onExecutePlan={handleExecutePlan}
+                                    onClarificationSubmit={handleClarificationSubmit}
+                                    isDimmed={searchQuery.trim() !== '' && !msg.text.toLowerCase().includes(searchQuery.toLowerCase())}
+                                    isCurrentResult={index === currentSearchResultMessageIndex}
+                                    searchQuery={searchQuery}
+                                    isAdmin={isAdmin}
+                                    isTyping={isAiResponding}
+                                />
+                            </div>
+                        )
+                      })}
                     </AnimatePresence>
                 </div>
             )}
@@ -154,6 +163,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         isAdmin={isAdmin}
         workspaceMode={workspaceMode}
         isInitialView={isInitialView && !chat}
+        loadingMessage={loadingMessage}
       />
     </div>
   );

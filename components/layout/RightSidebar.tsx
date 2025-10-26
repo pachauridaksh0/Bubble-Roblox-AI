@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CodeBlock } from '../ui/CodeBlock';
@@ -23,7 +24,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, code }) => {
             <h2 className="text-xl font-semibold mb-4 text-white flex-shrink-0">Code Preview</h2>
             <div className="flex-1 bg-black/30 rounded-lg overflow-hidden">
              {code ? (
-                <CodeBlock code={code} language="lua" showFooter={false} />
+// FIX: Removed the 'showFooter' prop as it does not exist on the CodeBlock component.
+                <CodeBlock code={code} language="lua" />
              ) : (
                 <div className="p-4 h-full flex items-center justify-center">
                     <p className="text-gray-400 text-center">Code from AI responses will appear here.</p>

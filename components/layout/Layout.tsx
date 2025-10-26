@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { LeftSidebar } from './LeftSidebar';
 import { ChatView } from '../chat/ChatView';
 import { ProjectsPage } from '../pages/ProjectsPage';
 import { TopBar } from '../dashboard/TopBar';
-import { Project, Message, Chat, WorkspaceMode } from '../../types';
+import { Project, Message, Chat, WorkspaceMode, ProjectPlatform, ProjectType, Plan } from '../../types';
 import { SettingsPage } from '../pages/SettingsPage';
 import { useAuth } from '../../contexts/AuthContext';
-import { getAllChatsForUser, ChatWithProjectData, addMessage, createProject, updateProject as updateDbProject, createChat as createDbChat, updateChat as updateDbChat, getMessages, deleteChat, extractAndSaveMemory } from '../../services/databaseService';
+import { getAllChatsForUser, ChatWithProjectData, addMessage, createProject, updateProject as updateDbProject, createChat as createDbChat, updateChat as updateDbChat, getMessages, deleteChat, extractAndSaveMemory, updateMessagePlan } from '../../services/databaseService';
 import { StatusBar } from '../admin/ImpersonationBanner';
 import { CoCreatorWorkspace } from '../cocreator/CoCreatorWorkspace';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
@@ -15,18 +18,38 @@ import { useToast } from '../../hooks/useToast';
 import { runAgent } from '../../agents';
 import { WebAppPreview } from '../preview/WebAppPreview';
 
+// New Community Page Placeholders
+import { MarketplacePage } from '../community/MarketplacePage';
+import { MessagesPage } from '../community/MessagesPage';
+import { DiscoverPage } from '../community/DiscoverPage';
+
 type View = 'chat' | 'settings';
+type HubView = 'projects' | 'marketplace' | 'messages' | 'discover';
 
 interface LayoutProps {
   geminiApiKey: string;
 }
+
+const DUMMY_AUTONOMOUS_PROJECT: Project = {
+  id: 'autonomous-project',
+  user_id: 'unknown',
+  name: 'Autonomous Chat',
+  description: 'A personal chat with the AI.',
+  status: 'In Progress',
+  platform: 'Web App',
+  project_type: 'conversation',
+  default_model: 'gemini_2.5_flash',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
 
 export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
   const { user, supabase, isImpersonating, profile, isAdmin, signOut, stopImpersonating, updateUserProfile } = useAuth();
   const { addToast } = useToast();
   
   const [view, setView] = useState<View>('chat');
-  const [workspaceMode, setWorkspaceMode] = useLocalStorage<WorkspaceMode>('workspaceMode', 'autonomous');
+  const [workspaceMode, setWorkspaceMode] = useLocalStorage<WorkspaceMode>('workspaceMode', 'cocreator');
+  const [hubView, setHubView] = useState<HubView>('projects');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   
   const [allChats, setAllChats] = useState<ChatWithProjectData[]>([]);
@@ -39,19 +62,58 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<number[]>([]);
   const [currentSearchResultIndex, setCurrentSearchResultIndex] = useState(-1);
+
+  const isThinking = isLoading || isCreatingChat;
+  const [loadingMessage, setLoadingMessage] = useState('Bubble is ready');
+  const loadingTexts = useMemo(() => [
+    "Thinking...", "Analyzing request...", "Consulting memory...", 
+    "Formulating plan...", "Generating code...", "Adapting to updates..."
+  ], []);
+
+  useEffect(() => {
+    let intervalId: number | undefined;
+    if (isThinking) {
+        let currentIndex = 0;
+        setLoadingMessage(loadingTexts[currentIndex]);
+        intervalId = window.setInterval(() => {
+            currentIndex = (currentIndex + 1) % loadingTexts.length;
+            setLoadingMessage(loadingTexts[currentIndex]);
+        }, 2500);
+    } else {
+        setLoadingMessage('Bubble is ready');
+    }
+    return () => {
+        if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [isThinking, loadingTexts]);
   
   const activeProject = useMemo(() => activeChat?.projects ?? null, [activeChat]);
   
   const handleLogoutAction = isImpersonating ? stopImpersonating : signOut;
 
   useEffect(() => {
-    // Always start in autonomous mode on app load, overriding any stored preference.
+    // Default all users to autonomous mode on load.
     setWorkspaceMode('autonomous');
-  }, []); // Empty dependency array ensures this runs only once on mount.
+  }, []);
 
   const autonomousChats = useMemo(() => {
-    return allChats.filter(c => c.projects?.name === 'Autonomous Chats');
+    return allChats.filter(c => !c.project_id);
   }, [allChats]);
+  
+  const chatsForSidebar = useMemo(() => {
+    if (workspaceMode === 'cocreator') {
+        if (activeProject) {
+            // Inside a project, show only that project's chats
+            return allChats.filter(c => c.project_id === activeProject.id);
+        } else {
+            // In the Co-Creator Hub, show autonomous chats
+            return autonomousChats;
+        }
+    }
+    // In autonomous mode, show autonomous chats
+    return autonomousChats;
+  }, [allChats, workspaceMode, activeProject, autonomousChats]);
+
 
   useEffect(() => {
     if (!user || !supabase) return;
@@ -127,12 +189,17 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
   const handleSelectChat = (chat: ChatWithProjectData) => {
     setActiveChat(chat);
     setView('chat');
-    setWorkspaceMode('autonomous');
+    if (chat.project_id) {
+        setWorkspaceMode('cocreator');
+    } else {
+        setWorkspaceMode('autonomous');
+    }
     setIsMobileSidebarOpen(false);
   };
 
   const handleGoToHub = () => {
     setWorkspaceMode('cocreator');
+    setHubView('projects');
     setActiveChat(null);
     setView('chat');
     setIsMobileSidebarOpen(false);
@@ -147,6 +214,17 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
     setActiveChat(null);
     setView('chat');
     setWorkspaceMode('autonomous');
+    setIsMobileSidebarOpen(false);
+  };
+  
+  const handleNewCoCreatorChat = async () => {
+    if (!activeProject || !user || !supabase) return;
+    const projectChats = allChats.filter(c => c.project_id === activeProject.id);
+    const newChatName = `New Chat ${projectChats.length + 1}`;
+    const newChat = await createDbChat(supabase, user.id, newChatName, 'build', activeProject.id);
+    const newChatWithProjectData: ChatWithProjectData = { ...newChat, projects: activeProject };
+    setAllChats(prev => [newChatWithProjectData, ...prev]);
+    setActiveChat(newChatWithProjectData);
     setIsMobileSidebarOpen(false);
   };
 
@@ -172,13 +250,39 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
       if (chatForProject) {
           setActiveChat(chatForProject);
       } else {
-          addToast("This project doesn't have any chats yet.", "info");
+          // If no chats, still select the project to enter the CoCreator view
+          const newChat = await createDbChat(supabase!, user!.id, `Main Chat`, 'build', project.id);
+          const newChatWithProject: ChatWithProjectData = { ...newChat, projects: project };
+          setAllChats(prev => [newChatWithProject, ...prev]);
+          setActiveChat(newChatWithProject);
       }
       setView('chat');
-      setWorkspaceMode('cocreator'); // Switch to cocreator when a project is selected
+      setWorkspaceMode('cocreator');
   };
 
-  const createProjectFromPrompt = async (prompt: string) => {
+  const handleCreateCoCreatorProject = async (name: string, platform: ProjectPlatform, projectType: ProjectType): Promise<void> => {
+    if (!user || !supabase) return;
+    setIsCreatingChat(true);
+    try {
+        const newProject = await createProject(supabase, user.id, name, platform, projectType);
+        addToast(`Created new project: ${name}!`, "success");
+        // Refetch chats to include the new project (or manually add it)
+        const userChats = await getAllChatsForUser(supabase, user.id);
+        setAllChats(userChats);
+        // After creation, select the project to enter its workspace
+        handleSelectProjectFromHub(newProject);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+        addToast(`Failed to create project: ${errorMessage}`, "error");
+        console.error("Error creating co-creator project:", error);
+        throw error; // Re-throw to keep modal open
+    } finally {
+        setIsCreatingChat(false);
+    }
+};
+
+
+  const createProjectFromPrompt = async (prompt: string): Promise<void> => {
     if (!user || !supabase) return;
     setIsCreatingChat(true);
     try {
@@ -189,7 +293,7 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
       newProject.description = description;
       await updateDbProject(supabase, newProject.id, { description });
 
-      const newChat = await createDbChat(supabase, newProject.id, user.id, name, 'build');
+      const newChat = await createDbChat(supabase, user.id, name, 'build', newProject.id);
       
       const newChatWithProject: ChatWithProjectData = {
         ...newChat,
@@ -199,9 +303,11 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
       addToast(`Created new project: ${name}!`, "success");
       setAllChats(prev => [newChatWithProject, ...prev]);
       setActiveChat(newChatWithProject);
+      setWorkspaceMode('cocreator'); // Switch to co-creator mode
       
       await handleSendMessage(prompt, newChatWithProject);
-
+      // FIX: The async function `createProjectFromPrompt` must return `Promise<void>` to match the `onCreateAutonomousProject` prop type. Adding an explicit `return` prevents it from implicitly returning a value from the last awaited expression, which was causing the type error.
+      return;
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
         addToast(`Failed to create project: ${errorMessage}`, "error");
@@ -216,40 +322,24 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
     setIsCreatingChat(true);
     try {
       if (workspaceMode === 'autonomous') {
-        // Find or create the master project for all autonomous chats
-        let autonomousProject = allChats.find(c => c.projects?.name === 'Autonomous Chats')?.projects;
-        if (!autonomousProject) {
-          autonomousProject = await createProject(supabase, user.id, 'Autonomous Chats', 'Web App', 'document', 'A collection of all your conversations in Autonomous Mode.');
-        }
-
-        // Create a new chat for this specific conversation, named after the prompt
+        // Create a new chat for this specific conversation, not tied to any project
         const newChatName = prompt; // Will be renamed later by AI
-        const newChat = await createDbChat(supabase, autonomousProject.id, user.id, newChatName, 'chat');
+        const newChat = await createDbChat(supabase, user.id, newChatName, 'chat', null);
         
-        const newChatWithProject: ChatWithProjectData = { ...newChat, projects: autonomousProject };
+        const newChatWithProject: ChatWithProjectData = { ...newChat, projects: null };
         
         setAllChats(prev => [newChatWithProject, ...prev]);
         setActiveChat(newChatWithProject);
         // Now that the chat exists, call the regular send message handler
         await handleSendMessage(prompt, newChatWithProject);
 
-      } else { // Keep existing Co-Creator logic
+      } else { // Co-Creator mode (handles intent classification)
         const { intent } = await classifyUserIntent(prompt, geminiApiKey);
         if (intent === 'creative_request') {
           await createProjectFromPrompt(prompt);
         } else {
-          let generalChat = allChats.find(c => c.projects?.name === 'General Chat');
-          if (generalChat) {
-            setActiveChat(generalChat);
-            await handleSendMessage(prompt, generalChat);
-          } else {
-            const newProject = await createProject(supabase, user.id, 'General Chat', 'Web App', 'document');
-            const newChat = await createDbChat(supabase, newProject.id, user.id, 'General Chat', 'chat');
-            const newChatWithProject: ChatWithProjectData = { ...newChat, projects: newProject };
-            setAllChats(prev => [newChatWithProject, ...prev]);
-            setActiveChat(newChatWithProject);
-            await handleSendMessage(prompt, newChatWithProject);
-          }
+          // This should ideally not happen if user starts from the hub, but as a fallback:
+          addToast("To start a conversation, please switch to Autonomous Mode.", "info");
         }
       }
     } catch (error) {
@@ -261,28 +351,28 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
     }
   };
 
-  const handleSendMessage = async (text: string, chatToUse: ChatWithProjectData | null = activeChat) => {
-      if (!text.trim() || !supabase || !user || !chatToUse || !chatToUse.projects) return;
+// FIX: Added explicit Promise<void> return type. The function was implicitly returning a value from the last awaited expression (`updateDbProject`), causing incorrect type inference in functions that called it (like `createProjectFromPrompt`), leading to a type mismatch error.
+  const handleSendMessage = async (text: string, chatToUse: ChatWithProjectData | null = activeChat): Promise<void> => {
+      if (!text.trim() || !supabase || !user || !chatToUse) return;
 
       const tempId = `temp-ai-${Date.now()}`;
 
       try {
         const userMessageData: Omit<Message, 'id' | 'created_at'> = {
-          project_id: chatToUse.projects.id,
+          project_id: chatToUse.project_id,
           chat_id: chatToUse.id,
           user_id: user.id,
           text,
           sender: 'user',
         };
         
-        // Step 1: Save user message to DB
         const savedUserMessage = await addMessage(supabase, userMessageData);
-        const historyForAgent = [...messages, savedUserMessage];
+        // Find the most recent message with a plan to pass to the agent
+        const historyWithPlan = [...messages, savedUserMessage];
         
-        // Step 2: Add user message and temp AI message to UI
         const tempAiMessage: Message = {
             id: tempId,
-            project_id: chatToUse.projects.id,
+            project_id: chatToUse.project_id,
             chat_id: chatToUse.id,
             text: '',
             sender: 'ai',
@@ -290,12 +380,10 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
         setMessages(prev => [...prev, savedUserMessage, tempAiMessage]);
         setIsLoading(true);
 
-        // Step 3: Run the AI agent
         const onStreamChunk = (chunk: string) => {
             let isEvent = false;
             try {
                 const event = JSON.parse(chunk);
-                // Handle special events from the agent, like image generation status
                 if (event.type === 'image_generation_start') {
                     isEvent = true;
                     setMessages(prev => prev.map(m =>
@@ -307,65 +395,74 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
             }
 
             if (!isEvent) {
-                 // Append text chunk for streaming effect
-                setMessages(prev =>
+                 setMessages(prev =>
                     prev.map(m => m.id === tempId ? { ...m, text: m.text + chunk } : m)
                 );
             }
         };
 
-        const { messages: agentMessages, projectUpdate } = await runAgent({
+        const projectForAgent = chatToUse.projects ?? {
+            ...DUMMY_AUTONOMOUS_PROJECT,
+            user_id: user.id,
+        };
+
+        const { messages: agentMessages, projectUpdate, updatedPlan } = await runAgent({
             prompt: text,
             apiKey: geminiApiKey,
-            model: profile?.preferred_chat_model || chatToUse.projects.default_model,
-            project: chatToUse.projects,
+            model: projectForAgent.default_model,
+            project: projectForAgent,
             chat: chatToUse,
             user,
             profile,
             supabase,
-            history: historyForAgent,
+            history: historyWithPlan,
             onStreamChunk,
-            workspaceMode,
+            workspaceMode
         });
         
-        // Step 4: Save all AI responses from the agent to the database.
         const savedAiMessages: Message[] = [];
         for (const messageContent of agentMessages) {
-             // If credit was deducted, the profile state is now stale.
-             // We need to update the local profile with the new credit balance.
-             if (messageContent.sender === 'ai' && messageContent.text.includes("You don't have enough credits")) {
-                // This is a bit of a hack, but it avoids a full profile refetch.
-             } else if (messageContent.image_base64) {
-                // Refetch profile after successful image generation to get new credit balance
-                const { data: latestProfile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-                if (latestProfile) {
-                    // This will trigger a re-render in components that use the auth context.
-                    updateUserProfile(latestProfile, false); 
-                }
-             }
-             const savedAiMessage = await addMessage(supabase, messageContent);
-             savedAiMessages.push(savedAiMessage);
+            const savedAiMessage = await addMessage(supabase, { ...messageContent, project_id: chatToUse.project_id });
+            savedAiMessages.push(savedAiMessage);
         }
 
-        // Step 5: Update the UI state in a single, robust operation.
-        setMessages(prev => {
-            // Remove the temporary streaming message
-            const messagesWithoutTemp = prev.filter(m => m.id !== tempId);
-            // Add all the newly saved, final AI messages
-            return [...messagesWithoutTemp, ...savedAiMessages];
-        });
+        if (savedUserMessage && savedAiMessages.length > 0) {
+            extractAndSaveMemory(supabase, user.id, savedUserMessage.text, savedAiMessages[0].text, chatToUse.project_id)
+                .catch(err => console.warn("Background memory extraction failed:", err));
+        }
         
-        // Step 6: Post-processing (memory, project updates)
-        if (savedAiMessages.length > 0) {
-            const finalAiMessage = savedAiMessages[savedAiMessages.length - 1];
-            extractAndSaveMemory(supabase, user.id, text, finalAiMessage.text || '', chatToUse.projects.id)
-                .catch(e => console.warn("Could not auto-save memory:", e));
+        setMessages(prev => {
+            let newMessages = prev.filter(m => m.id !== tempId);
+            
+            // If the agent returned an updated plan, find the original plan message and update it.
+            if (updatedPlan) {
+                newMessages = newMessages.map(m => 
+                    m.id === updatedPlan.messageId ? { ...m, plan: updatedPlan.plan } : m
+                );
+            }
+            
+            return [...newMessages, ...savedAiMessages];
+        });
+
+        // Persist the plan update to the database
+        if (updatedPlan) {
+            await updateMessagePlan(supabase, updatedPlan.messageId, updatedPlan.plan);
         }
 
-        if (projectUpdate && chatToUse.projects) {
-            await handleUpdateProject(chatToUse.projects.id, projectUpdate);
+        if (projectUpdate && chatToUse.project_id) {
+            const updatedProject = await updateDbProject(supabase, chatToUse.project_id, projectUpdate);
+            setAllChats(prev => prev.map(c => 
+                c.project_id === updatedProject.id && c.projects 
+                ? { ...c, projects: { ...c.projects, ...updatedProject }} 
+                : c
+            ));
+            setActiveChat(prev => 
+                prev && prev.project_id === updatedProject.id && prev.projects
+                ? { ...prev, projects: { ...prev.projects, ...updatedProject }}
+                : prev
+            );
         }
-
+        return;
       } catch (e) {
         const errorMessage = e instanceof Error ? e.message : "An unknown error occurred while sending the message.";
         addToast(errorMessage, "error");
@@ -376,117 +473,151 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
       }
   };
   
-  const handleUpdateProject = async (projectId: string, updates: Partial<Project>) => {
-    if (!supabase) return;
-    try {
-        const updatedProject = await updateDbProject(supabase, projectId, updates);
-        setAllChats(prev => prev.map(c => {
-            if (c.project_id === projectId && c.projects) {
-                return { ...c, projects: { ...c.projects, ...updatedProject } };
-            }
-            return c;
-        }));
-    } catch (error) {
-        console.error("Failed to update project", error);
-    }
-  };
-
-  const renderCurrentView = () => {
-    const chatViewProps = {
-        project: activeProject,
-        chat: activeChat,
-        geminiApiKey: geminiApiKey,
-        messages: messages,
-        isLoadingHistory: isLoading,
-        isCreatingChat: isCreatingChat,
-        setMessages: setMessages,
-        onSendMessage: activeChat ? handleSendMessage : handleFirstMessage,
-        onChatUpdate: (updates: Partial<Chat>) => activeChat && handleUpdateChat(activeChat.id, updates),
-        onActiveProjectUpdate: (updates: Partial<Project>) => activeProject && handleUpdateProject(activeProject.id, updates),
-        searchQuery: searchQuery,
-        onSearchResultsChange: setSearchResults,
-        currentSearchResultMessageIndex: currentSearchResultIndex,
-        isAdmin: !!isAdmin,
-        workspaceMode: workspaceMode,
-    };
-
-    switch (view) {
-      case 'settings':
+  const renderMainContent = () => {
+    if (view === 'settings') {
         return <SettingsPage onBack={() => setView('chat')} />;
-      case 'chat':
-      default:
-        if (workspaceMode === 'cocreator' && !activeChat) {
-          return <ProjectsPage profile={profile} onSelectProject={handleSelectProjectFromHub} />;
-        }
-        if (workspaceMode === 'cocreator' && activeChat && activeProject) {
-            return (
-                <div className="flex flex-1 overflow-hidden">
-                    <div className="flex-1 flex flex-col">
-                         <ChatView {...chatViewProps} key={activeChat?.id || 'cocreator-chat'} />
-                    </div>
-                    <CoCreatorWorkspace project={activeProject} messages={messages} />
-                </div>
-            );
+    }
+    
+    if (workspaceMode === 'cocreator') {
+        if (!activeProject) {
+            switch (hubView) {
+                case 'marketplace': return <MarketplacePage />;
+                case 'messages': return <MessagesPage />;
+                case 'discover': return <DiscoverPage />;
+                case 'projects':
+                default:
+                    const projectsForHub = allChats
+                        .map(c => c.projects)
+                        .filter((p): p is Project => !!p)
+                        .reduce((acc, current) => {
+                            if (!acc.find(item => item.id === current.id)) {
+                                acc.push(current);
+                            }
+                            return acc;
+                        }, [] as Project[]);
+                    
+                    return (
+                        <ProjectsPage
+                            profile={profile}
+                            onSelectProject={handleSelectProjectFromHub}
+                            projects={projectsForHub}
+                            onCreateCoCreatorProject={handleCreateCoCreatorProject}
+                            onCreateAutonomousProject={createProjectFromPrompt}
+                        />
+                    );
+            }
         }
         
-        // Autonomous mode
-        const hasWebAppCode = messages.some(m => m.language === 'html' && m.code);
-        if (hasWebAppCode) {
-            return (
-                <div className="flex flex-1 overflow-hidden">
-                    <div className="flex-1 flex flex-col">
-                        <ChatView {...chatViewProps} key={activeChat?.id || 'new-chat-auto-split'} />
-                    </div>
-                    <WebAppPreview messages={messages} />
-                </div>
-            );
-        }
+        return (
+            <CoCreatorWorkspace
+                project={activeProject}
+                chat={activeChat}
+                geminiApiKey={geminiApiKey}
+                messages={messages}
+                isLoadingHistory={isLoading}
+                isCreatingChat={isCreatingChat}
+                setMessages={setMessages}
+                onSendMessage={activeChat ? handleSendMessage : handleFirstMessage}
+                onChatUpdate={(updates) => activeChat && handleUpdateChat(activeChat.id, updates)}
+                onActiveProjectUpdate={async (updates) => {
+                    if (activeProject) {
+                        try {
+                            await updateDbProject(supabase!, activeProject.id, updates);
+                            addToast('Project updated successfully.', 'success');
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : "An unknown error occurred";
+                            addToast(`Error updating project: ${message}`, 'error');
+                            console.error("Error in onActiveProjectUpdate:", error);
+                        }
+                    }
+                }}
+                searchQuery={searchQuery}
+                onSearchResultsChange={setSearchResults}
+                currentSearchResultMessageIndex={currentSearchResultIndex}
+                isAdmin={!!isAdmin}
+                workspaceMode={workspaceMode}
+                projectType={activeProject.project_type === 'website' ? 'website' : 'roblox_game'}
+                loadingMessage={loadingMessage}
+            />
+        );
+    }
 
-        return <ChatView {...chatViewProps} key={activeChat?.id || 'new-chat-auto'} />;
+    return (
+        <ChatView
+            key={activeChat?.id || 'autonomous-new-chat'}
+            project={activeProject}
+            chat={activeChat}
+            geminiApiKey={geminiApiKey}
+            messages={messages}
+            isLoadingHistory={isLoading}
+            isCreatingChat={isCreatingChat}
+            setMessages={setMessages}
+            onSendMessage={activeChat ? handleSendMessage : handleFirstMessage}
+            onChatUpdate={(updates) => activeChat && handleUpdateChat(activeChat.id, updates)}
+            onActiveProjectUpdate={null}
+            searchQuery={searchQuery}
+            onSearchResultsChange={setSearchResults}
+            currentSearchResultMessageIndex={currentSearchResultIndex}
+            isAdmin={!!isAdmin}
+            workspaceMode={workspaceMode}
+            loadingMessage={loadingMessage}
+        />
+    );
+  };
+  
+  const handleNewChatClick = () => {
+    if (workspaceMode === 'cocreator' && activeProject) {
+        handleNewCoCreatorChat();
+    } else {
+        handleNewChat();
     }
   };
 
   return (
-    <div className="h-screen w-full bg-bg-primary font-sans flex flex-col">
+    <div className="flex flex-col h-screen w-full bg-bg-secondary font-sans text-text-primary">
       <StatusBar />
       <div className="flex flex-1 overflow-hidden">
-          <LeftSidebar
-            allChats={autonomousChats}
-            activeChatId={activeChat?.id}
-            onSelectChat={handleSelectChat}
-            onNewChatClick={handleNewChat}
-            onUpdateChat={handleUpdateChat}
-            onDeleteChat={handleDeleteChat}
-            onSettingsClick={handleGoToSettings}
+        <LeftSidebar
+          allChats={chatsForSidebar}
+          activeChatId={activeChat?.id}
+          onSelectChat={handleSelectChat}
+          onNewChatClick={handleNewChatClick}
+          onUpdateChat={handleUpdateChat}
+          onDeleteChat={handleDeleteChat}
+          onSettingsClick={handleGoToSettings}
+          onGoToHub={handleGoToHub}
+          onSignOut={handleLogoutAction}
+          profile={profile}
+          isMobileOpen={isMobileSidebarOpen}
+          onMobileClose={() => setIsMobileSidebarOpen(false)}
+          workspaceMode={workspaceMode}
+          isAdmin={isAdmin}
+          activeProject={activeProject}
+        />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <TopBar
             onGoToHub={handleGoToHub}
-            onSignOut={handleLogoutAction}
-            profile={profile}
-            isMobileOpen={isMobileSidebarOpen}
-            onMobileClose={() => setIsMobileSidebarOpen(false)}
+            onAccountSettingsClick={handleGoToSettings}
+            onProjectSettingsClick={() => { /* TODO */ }}
+            onLogout={handleLogoutAction}
+            activeProjectName={activeProject?.name ?? null}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
             workspaceMode={workspaceMode}
-            isAdmin={isAdmin}
+            onWorkspaceModeChange={(mode) => setWorkspaceMode(mode)}
+            isProjectView={!!activeProject}
+            onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
+            isThinking={isThinking}
+            onSwitchToAutonomous={handleNewChat}
+            onSwitchToCocreator={handleGoToHub}
+            hubView={hubView}
+            onHubViewChange={setHubView}
+            loadingMessage={loadingMessage}
           />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <TopBar
-              onGoToHub={handleGoToHub}
-              onAccountSettingsClick={handleGoToSettings}
-              onProjectSettingsClick={() => {}} // This will be handled inside CoCreatorWorkspace
-              onLogout={handleLogoutAction}
-              activeProjectName={activeProject?.name ?? null}
-              searchQuery={searchQuery}
-              onSearchQueryChange={setSearchQuery}
-              onSwitchToAutonomous={handleNewChat}
-              onSwitchToCocreator={handleGoToHub}
-              workspaceMode={workspaceMode}
-              onWorkspaceModeChange={setWorkspaceMode}
-              isProjectView={!!activeProject && workspaceMode === 'cocreator'}
-              onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
-              isThinking={isLoading || isCreatingChat}
-            />
-            <main className="flex-1 overflow-y-auto flex flex-col">
-                {renderCurrentView()}
-            </main>
-          </div>
+          <main className="flex-1 overflow-y-auto bg-bg-primary px-2 md:px-0">
+            {renderMainContent()}
+          </main>
+        </div>
       </div>
     </div>
   );

@@ -1,12 +1,10 @@
-
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
 import { autonomousInstruction } from './instructions';
 import { getUserFriendlyError } from '../errorUtils';
-import { getMemoriesForContext } from "../../services/databaseService";
 import { generateImage } from '../../services/geminiService';
-import { ImageModel } from '../../types';
+import { saveMemory } from '../../services/databaseService';
+import { ImageModel, MemoryLayer } from '../../types';
 
 
 // This file has been updated to use the Gemini API's native structured output (JSON mode)
@@ -32,6 +30,29 @@ const autonomousAgentSchema = {
     language: {
         type: Type.STRING,
         description: "The programming language of the code snippet (e.g., 'python', 'lua', 'javascript'). ONLY include this if the 'code' field is present."
+    },
+    memoryToCreate: {
+        type: Type.ARRAY,
+        description: "An array of memory objects to be saved. ONLY include this if the user provides new information to remember.",
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                layer: {
+                    type: Type.STRING,
+                    enum: ['personal', 'project', 'codebase', 'aesthetic'],
+                    description: "The memory layer to save the content to."
+                },
+                key: {
+                    type: Type.STRING,
+                    description: "The descriptive key for the memory (e.g., 'user_name', 'project_type')."
+                },
+                value: {
+                    type: Type.STRING,
+                    description: "The actual data or fact to save."
+                }
+            },
+            required: ["layer", "key", "value"]
+        }
     }
   },
   required: ["userResponse"]
@@ -39,7 +60,7 @@ const autonomousAgentSchema = {
 
 
 export const runAutonomousAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
-    const { prompt, apiKey, model, project, chat, history, supabase, user, profile, onStreamChunk } = input;
+    const { prompt, apiKey, model, project, chat, history, supabase, user, profile, onStreamChunk, memoryContext } = input;
 
     try {
         const ai = new GoogleGenAI({ apiKey });
@@ -49,8 +70,7 @@ export const runAutonomousAgent = async (input: AgentInput): Promise<AgentExecut
             parts: [{ text: msg.text }],
         })).filter(msg => msg.parts[0].text.trim() !== '');
 
-        const memoryContext = await getMemoriesForContext(supabase, user.id, project.id);
-        const systemInstruction = `Current Timestamp: ${new Date().toISOString()}\n\n${autonomousInstruction}\n\n--- MEMORY CONTEXT ---\n${memoryContext}`;
+        const systemInstruction = `Current Timestamp: ${new Date().toISOString()}\n\n${autonomousInstruction}\n\n--- MEMORY CONTEXT ---\n${memoryContext || 'No memory context available.'}`;
         
         const contents = [...geminiHistory, { role: 'user' as const, parts: [{ text: prompt }] }];
 
@@ -73,6 +93,20 @@ export const runAutonomousAgent = async (input: AgentInput): Promise<AgentExecut
         const imagePrompt = parsedResponse.imagePrompt;
         const code = parsedResponse.code;
         const language = parsedResponse.language;
+        const memoryToCreate = parsedResponse.memoryToCreate;
+
+        // --- Handle Background Memory Creation ---
+        // This is a side-effect and should not block the main response.
+        if (memoryToCreate && Array.isArray(memoryToCreate) && memoryToCreate.length > 0) {
+            Promise.all(memoryToCreate.map((mem: { layer: MemoryLayer; key: string; value: string; }) => 
+                saveMemory(supabase, user.id, mem.layer, mem.key, mem.value)
+            )).catch(err => {
+                // Log the error but don't throw, as this is a non-critical background task.
+                console.warn("Autonomous agent failed to save memory:", err);
+            });
+        }
+        
+        // --- Handle Primary Response ---
 
         // Case 1: The AI generated code.
         if (code && typeof code === 'string' && code.trim()) {
@@ -95,27 +129,30 @@ export const runAutonomousAgent = async (input: AgentInput): Promise<AgentExecut
         // Case 2: The user wants an image, which costs credits.
         if (imagePrompt && typeof imagePrompt === 'string' && imagePrompt.trim()) {
             
-            const isAdmin = profile?.membership === 'admin';
-            let modelToUse: ImageModel = profile?.preferred_image_model || 'nano_banana';
+            // Unconditionally fetch the latest profile to ensure model preference is up-to-date.
+            // This is critical because the profile object from the context might be stale.
+            const { data: latestProfile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+            if (profileError || !latestProfile) {
+                throw profileError || new Error("Could not re-fetch user profile before image generation.");
+            }
+            
+            const isAdmin = latestProfile.membership === 'admin';
+            const modelToUse: ImageModel = latestProfile.preferred_image_model || 'nano_banana';
+
 
             if (!isAdmin) {
                 // For non-admins, perform credit check and deduction.
                 const { data: settings, error: settingsError } = await supabase.from('app_settings').select('*').single();
                 if (settingsError || !settings) throw settingsError || new Error("Could not load credit cost settings.");
-
-                const { data: userProfile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-                if (profileError || !userProfile) throw profileError || new Error("Could not find user profile to check credits.");
-
-                // Update modelToUse with the latest from the profile
-                modelToUse = userProfile.preferred_image_model || 'nano_banana';
+                
                 const cost = settings[`cost_image_${modelToUse}`] || 1;
 
-                if (userProfile.credits < cost) {
+                if (latestProfile.credits < cost) {
                     const insufficientCreditsMessage: AgentOutput[0] = {
                         project_id: project.id,
                         chat_id: chat.id,
                         sender: 'ai',
-                        text: `Oops! You need ${cost} credits to generate an image with this model, but you only have ${userProfile.credits}. You can buy more in the settings.`,
+                        text: `Oops! You need ${cost} credits to generate an image with this model, but you only have ${latestProfile.credits}. You can buy more in the settings.`,
                     };
                     return { messages: [insufficientCreditsMessage] };
                 }

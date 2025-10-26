@@ -1,8 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { Memory, MemoryLayer } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
-// FIX: Renamed import from getMemories to getMemoriesForUser to match the updated export in databaseService.
-import { getMemoriesForUser, createMemory, updateMemory, deleteMemory } from '../../services/databaseService';
+import { getMemoriesForUser, saveMemory, updateMemory, deleteMemory } from '../../services/databaseService';
 import { PencilIcon, TrashIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/solid';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../../hooks/useToast';
@@ -17,40 +17,32 @@ const layerStyles: Record<MemoryLayer, { bg: string, text: string, border: strin
 interface MemoryModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (memory: Partial<Omit<Memory, 'id' | 'user_id'>>) => Promise<void>;
+    onSave: (memory: Partial<Omit<Memory, 'id' | 'user_id' | 'created_at' | 'updated_at'>>) => Promise<void>;
     memoryToEdit?: Memory | null;
 }
 
 const MemoryModal: React.FC<MemoryModalProps> = ({ isOpen, onClose, onSave, memoryToEdit }) => {
-    const [content, setContent] = useState('');
+    const [key, setKey] = useState('');
+    const [value, setValue] = useState('');
     const [layer, setLayer] = useState<MemoryLayer>('personal');
-    const [importance, setImportance] = useState(0.5);
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (memoryToEdit) {
-            setContent(memoryToEdit.content);
+            setKey(memoryToEdit.key);
+            setValue(memoryToEdit.value);
             setLayer(memoryToEdit.layer);
-            // FIX: Use a default value for importance to prevent errors if it's undefined.
-            setImportance(memoryToEdit.importance ?? 0.5);
         } else {
-            setContent('');
+            setKey('');
+            setValue('');
             setLayer('personal');
-            setImportance(0.5);
         }
     }, [memoryToEdit, isOpen]);
 
     const handleSubmit = async () => {
-        if (!content.trim()) return;
+        if (!key.trim() || !value.trim()) return;
         setIsSaving(true);
-        // FIX: Correctly structure the object passed to onSave.
-        await onSave({
-            content,
-            layer,
-            importance,
-            // If editing, pass the original project_id
-            project_id: memoryToEdit ? memoryToEdit.project_id : null, 
-        });
+        await onSave({ key, value, layer });
         setIsSaving(false);
     };
 
@@ -70,35 +62,34 @@ const MemoryModal: React.FC<MemoryModalProps> = ({ isOpen, onClose, onSave, memo
                         </div>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-1">Content</label>
-                                <textarea
-                                    value={content}
-                                    onChange={(e) => setContent(e.target.value)}
-                                    rows={4}
-                                    className="w-full p-2 bg-white/5 border border-white/20 rounded-md"
-                                    placeholder="Enter the memory content..."
-                                />
-                            </div>
-                            <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-1">Layer</label>
                                 <select value={layer} onChange={(e) => setLayer(e.target.value as MemoryLayer)} className="w-full p-2 bg-white/5 border border-white/20 rounded-md">
                                     {Object.keys(layerStyles).map(l => <option key={l} value={l}>{l.charAt(0).toUpperCase() + l.slice(1)}</option>)}
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-300 mb-1">Importance ({importance.toFixed(2)})</label>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Key</label>
                                 <input
-                                    type="range"
-                                    min="0" max="1" step="0.01"
-                                    value={importance}
-                                    onChange={(e) => setImportance(parseFloat(e.target.value))}
-                                    className="w-full"
+                                    value={key}
+                                    onChange={(e) => setKey(e.target.value)}
+                                    className="w-full p-2 bg-white/5 border border-white/20 rounded-md"
+                                    placeholder="e.g., user_name"
+                                />
+                            </div>
+                             <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Value</label>
+                                <textarea
+                                    value={value}
+                                    onChange={(e) => setValue(e.target.value)}
+                                    rows={5}
+                                    className="w-full p-2 bg-white/5 border border-white/20 rounded-md"
+                                    placeholder="Enter the detailed memory content here..."
                                 />
                             </div>
                         </div>
                         <div className="mt-6 flex justify-end gap-3">
                             <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-gray-300 bg-white/5 rounded-lg hover:bg-white/10">Cancel</button>
-                            <button onClick={handleSubmit} disabled={isSaving || !content.trim()} className="px-4 py-2 text-sm font-semibold bg-primary-start text-white rounded-lg hover:bg-primary-start/80 disabled:opacity-50">
+                            <button onClick={handleSubmit} disabled={isSaving || !key.trim() || !value.trim()} className="px-4 py-2 text-sm font-semibold bg-primary-start text-white rounded-lg hover:bg-primary-start/80 disabled:opacity-50">
                                 {isSaving ? 'Saving...' : 'Save Memory'}
                             </button>
                         </div>
@@ -110,7 +101,7 @@ const MemoryModal: React.FC<MemoryModalProps> = ({ isOpen, onClose, onSave, memo
 };
 
 
-const MemoryCard: React.FC<{ memory: Memory; onEdit: (memory: Memory) => void; onDelete: (memoryId: string) => void; }> = ({ memory, onEdit, onDelete }) => {
+const MemoryCard: React.FC<{ memory: Memory; onEdit: (memory: Memory) => void; onDelete: (memory: Memory) => void; }> = ({ memory, onEdit, onDelete }) => {
     return (
         <motion.div
             layout
@@ -119,25 +110,19 @@ const MemoryCard: React.FC<{ memory: Memory; onEdit: (memory: Memory) => void; o
             exit={{ opacity: 0, scale: 0.9 }}
             className={`p-4 bg-bg-secondary rounded-lg border ${layerStyles[memory.layer].border} flex flex-col gap-3`}
         >
-            <div className="flex justify-between items-center">
-                <span className={`px-2 py-0.5 text-xs font-semibold rounded-full capitalize ${layerStyles[memory.layer].bg} ${layerStyles[memory.layer].text}`}>
-                    {memory.layer}
-                </span>
-                <div className="flex gap-2">
+            <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full capitalize ${layerStyles[memory.layer].bg} ${layerStyles[memory.layer].text}`}>
+                        {memory.layer}
+                    </span>
+                    <p className="text-sm text-gray-400 font-mono mt-2 truncate" title={memory.key}>{memory.key}</p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
                     <button onClick={() => onEdit(memory)} className="p-1 text-gray-400 hover:text-white"><PencilIcon className="w-4 h-4" /></button>
-                    <button onClick={() => onDelete(memory.id)} className="p-1 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4" /></button>
+                    <button onClick={() => onDelete(memory)} className="p-1 text-gray-400 hover:text-red-400"><TrashIcon className="w-4 h-4" /></button>
                 </div>
             </div>
-            <p className="text-sm text-gray-300 flex-1">{memory.content}</p>
-            <div className="text-xs text-gray-500 flex justify-between items-center">
-                {/* FIX: Use a default value for usage_count to prevent rendering errors. */}
-                <span>Used: {memory.usage_count ?? 0} times</span>
-                {/* FIX: Use a default value for importance to prevent rendering errors. */}
-                <div className="flex items-center gap-1" title={`Importance: ${(memory.importance ?? 0.5).toFixed(2)}`}>
-                    <span>Importance</span>
-                    <div className="w-10 h-1.5 bg-white/10 rounded-full"><div className="h-full bg-primary-start rounded-full" style={{ width: `${(memory.importance ?? 0.5) * 100}%` }}></div></div>
-                </div>
-            </div>
+            <p className="text-sm text-gray-200 bg-black/20 p-2 rounded-md whitespace-pre-wrap break-words">{memory.value}</p>
         </motion.div>
     );
 };
@@ -179,25 +164,14 @@ export const MemoryDashboard: React.FC = () => {
         setMemoryToEdit(null);
     };
 
-    const handleSaveMemory = async (memoryData: Partial<Omit<Memory, 'id' | 'user_id'>>) => {
-        if (!user) return;
+    const handleSaveMemory = async (memoryData: Partial<Omit<Memory, 'id' | 'user_id' | 'created_at' | 'updated_at'>>) => {
+        if (!user || !memoryData.layer || !memoryData.key || !memoryData.value) return;
         try {
             if (memoryToEdit) {
-                // FIX: Correctly call updateMemory with the updates object.
                 await updateMemory(supabase, memoryToEdit.id, memoryData);
                 addToast("Memory updated successfully!", "success");
             } else {
-                // FIX: Correctly call createMemory with positional arguments from the memoryData object.
-                const { content, layer, importance, project_id } = memoryData;
-                await createMemory(
-                    supabase,
-                    user.id,
-                    layer!,
-                    content!,
-                    project_id || undefined,
-                    undefined, // No metadata from modal
-                    importance
-                );
+                await saveMemory(supabase, user.id, memoryData.layer, memoryData.key, memoryData.value, null);
                 addToast("Memory created successfully!", "success");
             }
             fetchMemories(); // Refresh list
@@ -208,16 +182,27 @@ export const MemoryDashboard: React.FC = () => {
         }
     };
 
-    const handleDeleteMemory = async (memoryId: string) => {
-        if (window.confirm("Are you sure you want to delete this memory?")) {
-            try {
-                await deleteMemory(supabase, memoryId);
-                addToast("Memory deleted.", "info");
-                fetchMemories(); // Refresh list
-            } catch (error) {
-                console.error("Failed to delete memory", error);
-                addToast("Failed to delete memory.", "error");
-            }
+    const handleDeleteMemory = async (memoryToDelete: Memory) => {
+        if (!window.confirm(`Are you sure you want to delete the memory: "${memoryToDelete.key}"?`)) {
+            return;
+        }
+    
+        // Keep the original state in case we need to revert
+        const originalMemories = [...memories];
+        
+        // Optimistically update the UI
+        setMemories(prevMemories => prevMemories.filter(m => m.id !== memoryToDelete.id));
+
+        try {
+            // Attempt to delete from the database
+            await deleteMemory(supabase, memoryToDelete.id);
+            addToast("Memory deleted successfully.", "success");
+        } catch (error) {
+            // If it fails, revert the UI and show an error
+            console.error("Failed to delete memory:", error);
+            const errorMessage = error instanceof Error ? error.message : "An unknown error occurred.";
+            addToast(`Failed to delete memory: ${errorMessage}. Restoring.`, "error");
+            setMemories(originalMemories); // Revert to the state before deletion
         }
     };
 
@@ -241,14 +226,8 @@ export const MemoryDashboard: React.FC = () => {
                                 <div className="h-5 w-16 bg-bg-tertiary rounded-full"></div>
                                 <div className="h-5 w-12 bg-bg-tertiary rounded"></div>
                             </div>
-                            <div className="space-y-2">
-                                <div className="h-4 w-full bg-bg-tertiary rounded"></div>
-                                <div className="h-4 w-5/6 bg-bg-tertiary rounded"></div>
-                            </div>
-                            <div className="flex justify-between">
-                                 <div className="h-3 w-20 bg-bg-tertiary rounded-full"></div>
-                                 <div className="h-3 w-24 bg-bg-tertiary rounded-full"></div>
-                            </div>
+                            <div className="h-4 w-1/2 bg-bg-tertiary rounded"></div>
+                            <div className="h-10 w-full bg-bg-tertiary rounded"></div>
                         </div>
                     ))}
                  </div>
@@ -268,3 +247,4 @@ export const MemoryDashboard: React.FC = () => {
         </div>
     );
 };
+      

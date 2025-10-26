@@ -90,6 +90,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         awardDailyCredits();
     }, [profile?.id]); // Reruns only when the user's profile ID changes (i.e., on login)
 
+    // This effect manages the application's theme based on user preference.
+    useEffect(() => {
+        const root = document.documentElement;
+        const theme = profile?.ui_theme;
+
+        if (theme === 'light') {
+            root.classList.remove('dark');
+        } else { // Default to 'dark' if the theme is 'dark' or not set.
+            root.classList.add('dark');
+        }
+
+        // After changing the class, re-initialize Mermaid to pick up the new CSS variables.
+        // A small delay ensures the browser has computed the new styles.
+        setTimeout(() => {
+            if ((window as any).initializeMermaidTheme) {
+                (window as any).initializeMermaidTheme();
+            }
+        }, 50);
+
+    }, [profile]);
+
+
     useEffect(() => {
         if (DEV_BYPASS_LOGIN) {
             // Mock data for development
@@ -180,7 +202,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updateUserProfile = async (updates: Partial<Profile>, fetchAfter: boolean = true) => {
         if (!user) throw new Error("User not authenticated.");
         const updatedProfile = await updateProfile(supabase, user.id, updates);
-        if(fetchAfter) setProfile(updatedProfile);
+        if (fetchAfter) {
+            // Use a functional update to merge the new data with the previous state.
+            // This is more robust and ensures React reliably detects the state change,
+            // fixing bugs where UI wouldn't update until a page refresh.
+            setProfile(prev => ({ ...(prev || {}), ...updatedProfile }));
+        }
     };
     const loginAsAdmin = () => { sessionStorage.setItem('isAdmin', 'true'); setIsAdmin(true); };
     const logoutAdmin = () => { sessionStorage.removeItem('isAdmin'); setIsAdmin(false); };

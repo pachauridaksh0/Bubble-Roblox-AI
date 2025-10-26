@@ -4,7 +4,6 @@ import { standingInstruction, opposingInstruction, synthesisInstruction } from '
 import { thinkerSchema } from './schemas';
 import { ThinkerResponse, Message } from '../../types';
 import { getUserFriendlyError } from "../errorUtils";
-import { getMemoriesForContext } from "../../services/databaseService";
 
 const mapMessagesToGeminiHistory = (messages: Message[]) => {
   // Thinker responses have complex objects, only use text for history
@@ -15,13 +14,12 @@ const mapMessagesToGeminiHistory = (messages: Message[]) => {
 };
 
 export const runThinkerAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
-    const { prompt, apiKey, model, project, chat, history, supabase, user, onStreamChunk } = input;
+    const { prompt, apiKey, model, project, chat, history, memoryContext, onStreamChunk } = input;
     const ai = new GoogleGenAI({ apiKey });
 
     try {
         const geminiHistory = mapMessagesToGeminiHistory(history);
-        const memoryContext = await getMemoriesForContext(supabase, user.id, project.id);
-        const contextPrompt = `MEMORY CONTEXT:\n${memoryContext}\n\nUSER REQUEST: "${prompt}"`;
+        const contextPrompt = `MEMORY CONTEXT:\n${memoryContext || 'No memory context available.'}\n\nUSER REQUEST: "${prompt}"`;
 
         // 1. Standing Response
         const standingContents = [...geminiHistory, { role: 'user', parts: [{ text: contextPrompt }] }];

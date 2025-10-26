@@ -3,7 +3,6 @@ import { AgentInput, AgentOutput, AgentExecutionResult } from '../types';
 import { chatInstruction } from './instructions';
 import { Message } from '../../types';
 import { getUserFriendlyError } from "../errorUtils";
-import { getMemoriesForContext } from "../../services/databaseService";
 
 const mapMessagesToGeminiHistory = (messages: Message[]) => {
   return messages.map(msg => ({
@@ -12,37 +11,36 @@ const mapMessagesToGeminiHistory = (messages: Message[]) => {
   })).filter(msg => msg.parts[0].text.trim() !== '');
 };
 
-// This agent is now ONLY for Co-Creator's "Chat" mode.
 export const runChatAgent = async (input: AgentInput): Promise<AgentExecutionResult> => {
-    const { prompt, apiKey, model, project, chat, onStreamChunk, history, supabase, user } = input;
+    const { prompt, apiKey, model, project, chat, onStreamChunk, history, memoryContext } = input;
     try {
-        // Step 1: Handle redirection logic specific to Co-Creator mode.
         const lowercasedPrompt = prompt.toLowerCase();
-        const thinkerKeywords = ['think', 'reason', 'debate', 'what if', 'pros and cons'];
-        const buildKeywords = ['make', 'create', 'build', 'generate', 'script', 'plan for'];
+        const planKeywords = ['plan for', 'design', 'workflow', 'chart', 'diagram', 'blueprint'];
+        const buildKeywords = ['make', 'create', 'build', 'generate', 'script', 'code'];
 
-        if (thinkerKeywords.some(keyword => lowercasedPrompt.includes(keyword))) {
-            const hardcodedResponse = "That's a great question! For debating ideas, please switch to **Bubble Thinker** mode using the selector below the input bar.";
+        // Check if user is asking the Chat agent to plan
+        if (planKeywords.some(keyword => lowercasedPrompt.includes(keyword))) {
+            const hardcodedResponse = "That sounds like a great idea! To create a project plan or diagram, please switch to **Bubble Plan** mode using the selector below the input bar.";
             onStreamChunk?.(hardcodedResponse);
             const aiMessage: AgentOutput[0] = { project_id: project.id, chat_id: chat.id, sender: 'ai', text: hardcodedResponse };
             return { messages: [aiMessage] };
         }
         
+        // Check if user is asking the Chat agent to build
         if (buildKeywords.some(keyword => lowercasedPrompt.includes(keyword))) {
-            const hardcodedResponse = "It looks like you want to build something! To create a plan or generate code, please switch to **Bubble Build** mode using the selector below the input bar.";
+            const hardcodedResponse = "I'm ready to get building! To start writing code for that, please switch over to **Bubble Build** mode.";
             onStreamChunk?.(hardcodedResponse);
             const aiMessage: AgentOutput[0] = { project_id: project.id, chat_id: chat.id, sender: 'ai', text: hardcodedResponse };
             return { messages: [aiMessage] };
         }
         
-        // Step 2: If no redirection, generate a conversational response.
+        // If no redirection is needed, proceed with a standard conversational response.
         const ai = new GoogleGenAI({ apiKey });
         
         const geminiHistory = mapMessagesToGeminiHistory(history);
         const contents = [...geminiHistory, { role: 'user', parts: [{ text: prompt }] }];
         
-        const memoryContext = await getMemoriesForContext(supabase, user.id, project.id);
-        const systemInstruction = `${chatInstruction}\n\nMEMORY CONTEXT:\n${memoryContext}`;
+        const systemInstruction = `${chatInstruction}\n\nMEMORY CONTEXT:\n${memoryContext || 'No memory context available.'}`;
 
         const responseStream = await ai.models.generateContentStream({
             model: model,

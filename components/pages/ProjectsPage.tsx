@@ -1,27 +1,37 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { PlusIcon, ExclamationTriangleIcon, SparklesIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { motion } from 'framer-motion';
 import { ProjectCard } from '../dashboard/ProjectCard';
-import { Project, Profile } from '../../types';
+import { Project, Profile, ProjectPlatform, ProjectType } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { getProjects, deleteProject } from '../../services/databaseService';
 import { NewProjectModal } from '../dashboard/NewProjectModal';
 import { useToast } from '../../hooks/useToast';
 import { AdminConfirmationModal } from '../admin/AdminConfirmationModal';
 import { ImportWizard } from '../import/ImportWizard';
+import { AutonomousNewProjectModal } from '../dashboard/AutonomousNewProjectModal';
 
 interface ProjectsPageProps {
   profile: Profile | null;
-  onSelectProject: (project: Project) => void;
+  onSelectProject: (project: Project) => void | Promise<void>;
   projects?: Project[];
   isLoading?: boolean;
   error?: string | null;
   onDeleteProject?: (project: Project) => void;
+  onCreateCoCreatorProject: (name: string, platform: ProjectPlatform, projectType: ProjectType) => Promise<void>;
+  onCreateAutonomousProject: (prompt: string) => Promise<void>;
 }
 
-export const ProjectsPage: React.FC<ProjectsPageProps> = ({ profile, onSelectProject, projects: providedProjects, isLoading: providedIsLoading, error: providedError, onDeleteProject }) => {
+export const ProjectsPage: React.FC<ProjectsPageProps> = ({ 
+  profile, 
+  onSelectProject, 
+  projects: providedProjects, 
+  isLoading: providedIsLoading, 
+  error: providedError, 
+  onDeleteProject,
+  onCreateCoCreatorProject,
+  onCreateAutonomousProject,
+}) => {
   const { supabase, user } = useAuth();
   const { addToast } = useToast();
 
@@ -31,7 +41,8 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ profile, onSelectPro
   
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [isImportWizardOpen, setIsImportWizardOpen] = useState(false);
-
+  const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
+  const [isAutonomousModalOpen, setIsAutonomousModalOpen] = useState(false);
 
   useEffect(() => {
     if (providedProjects) {
@@ -71,6 +82,11 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ profile, onSelectPro
     }
   };
 
+  const handleSwitchToAutonomous = () => {
+    setIsNewProjectModalOpen(false);
+    setIsAutonomousModalOpen(true);
+  };
+
   const deleteHandler = onDeleteProject || setProjectToDelete;
   const projectsToRender = providedProjects ? projects : projects.filter(p => p.name !== 'Autonomous Chats');
 
@@ -89,7 +105,7 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ profile, onSelectPro
       <div className="p-4 md:p-8">
         <div className="flex flex-col gap-4 text-center md:flex-row md:text-left md:justify-between md:items-center mb-8">
           <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-white">Co-Creator Hub</h1>
+              <h1 className="text-3xl md:text-4xl font-bold text-white">My Projects</h1>
               <p className="text-gray-400 mt-1">Manage all your projects created with Bubble AI.</p>
           </div>
            <div className="flex items-center justify-center gap-2">
@@ -99,6 +115,13 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ profile, onSelectPro
                 >
                     <ArrowDownTrayIcon className="w-5 h-5" />
                     <span>Import Project</span>
+                </button>
+                 <button
+                    onClick={() => setIsNewProjectModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-primary-start to-primary-end rounded-lg shadow-lg hover:scale-105 transition-transform"
+                >
+                    <PlusIcon className="w-5 h-5" />
+                    <span>New Project</span>
                 </button>
             </div>
         </div>
@@ -148,6 +171,18 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ profile, onSelectPro
               addToast('Project imported successfully!', 'success');
               // Here you would typically refresh the project list
           }}
+      />
+      <NewProjectModal
+        isOpen={isNewProjectModalOpen}
+        onClose={() => setIsNewProjectModalOpen(false)}
+        onCreateProject={onCreateCoCreatorProject}
+        onSwitchToAutonomous={handleSwitchToAutonomous}
+        isAdmin={profile?.role === 'admin'}
+      />
+       <AutonomousNewProjectModal
+        isOpen={isAutonomousModalOpen}
+        onClose={() => setIsAutonomousModalOpen(false)}
+        onCreate={onCreateAutonomousProject}
       />
     </>
   );
