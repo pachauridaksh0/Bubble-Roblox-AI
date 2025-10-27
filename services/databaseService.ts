@@ -1,12 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { Project, Message, Plan, ProjectPlatform, Profile, Chat, ChatMode, Memory, ProjectType, MemoryLayer, AppSettings } from '../types';
+import { Project, Message, Plan, ProjectPlatform, Profile, Chat, ChatMode, Memory, ProjectType, MemoryLayer, AppSettings, ChatWithProjectData } from '../types';
 // FIX: Import GoogleGenAI and Type for the new memory extraction function.
 import { GoogleGenAI, Type } from "@google/genai";
-
-// A new type to represent the data returned from the joined query
-export interface ChatWithProjectData extends Chat {
-  projects: Project | null;
-}
 
 // Helper to extract a clean error message from various error formats.
 const getErrorMessage = (error: any): string => {
@@ -732,3 +727,6 @@ export const deleteMemory = async (supabase: SupabaseClient, memoryId: string): 
     const { error } = await supabase.from('memories').delete().eq('id', memoryId);
     if (error) handleSupabaseError(error, 'Error deleting memory');
 };
+
+// FIX: Export ChatWithProjectData since it is used in the return type of an exported function.
+export type { ChatWithProjectData };

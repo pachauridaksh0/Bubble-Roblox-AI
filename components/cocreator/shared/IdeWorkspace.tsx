@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Split from 'react-split-grid';
 import Editor from '@monaco-editor/react';
 import { FileExplorer } from './FileExplorer';
-import { Message, Project, Chat, WorkspaceMode } from '../../../types';
-import { ChatWithProjectData } from '../../../services/databaseService';
+// FIX: Moved ChatWithProjectData import from databaseService to types.
+import { Message, Project, Chat, WorkspaceMode, ChatWithProjectData } from '../../../types';
 
 export interface IdeWorkspaceProps {
   project: Project;

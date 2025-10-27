@@ -14,7 +14,8 @@ interface AdminTopBarProps {
     setView: (view: AdminView) => void;
     workspaceMode: WorkspaceMode;
     onWorkspaceModeChange: (mode: WorkspaceMode) => void;
-    onMobileMenuClick: () => void;
+    onHamburgerClick: () => void;
+    showHamburger: boolean;
     isThinking?: boolean;
     onSwitchToAutonomous: () => void;
     onSwitchToCocreator: () => void;
@@ -30,7 +31,8 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({
     setView, 
     workspaceMode, 
     onWorkspaceModeChange, 
-    onMobileMenuClick, 
+    onHamburgerClick, 
+    showHamburger,
     isThinking = false,
     onSwitchToAutonomous,
     onSwitchToCocreator,
@@ -76,13 +78,15 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({
 
   if (workspaceMode === 'autonomous') {
     return (
-      <header className="relative flex-shrink-0 h-16 flex items-center justify-between md:justify-center px-4 md:px-8 border-b border-white/10 bg-bg-primary">
-          <div className="md:hidden">
-              <button onClick={onMobileMenuClick} className="p-2 text-gray-400 hover:text-white" aria-label="Open menu">
+      <header className="relative flex-shrink-0 h-16 flex items-center justify-between md:justify-center px-4 md:px-8 border-b border-border-color bg-bg-primary">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2">
+            {showHamburger && (
+              <button onClick={onHamburgerClick} className="p-2 text-gray-400 hover:text-white" aria-label="Open menu">
                   <Bars3Icon className="w-6 h-6" />
               </button>
+            )}
           </div>
-          <div className="hidden md:flex items-center gap-2 text-sm text-gray-400">
+          <div className="flex items-center gap-2 text-sm text-gray-400">
             {isThinking ? (
                 <>
                     <svg className="animate-spin h-4 w-4 text-yellow-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -98,20 +102,18 @@ export const AdminTopBar: React.FC<AdminTopBarProps> = ({
                 </>
             )}
           </div>
-           {/* Placeholder to balance flexbox on mobile */}
-          <div className="w-8 md:hidden" />
       </header>
     );
   }
 
   return (
-    <header className="relative flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-white/10 bg-bg-primary">
+    <header className="relative flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border-color bg-bg-primary">
       <div className="flex items-center gap-3 md:gap-6">
-        <div>
-            <button onClick={onMobileMenuClick} className="p-1 text-gray-400 hover:text-white" aria-label="Open menu">
+        {showHamburger && (
+            <button onClick={onHamburgerClick} className="p-1 text-gray-400 hover:text-white" aria-label="Open menu">
                 <Bars3Icon className="w-6 h-6" />
             </button>
-        </div>
+        )}
         
         <button onClick={onSwitchToCocreator} className="flex items-center gap-3 transition-transform hover:scale-105" title="Go to Admin Hub">
             <span className="text-2xl">🫧</span>

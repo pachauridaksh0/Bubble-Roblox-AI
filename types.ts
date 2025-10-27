@@ -11,6 +11,11 @@ export type Membership = 'na' | 'pro' | 'max' | 'admin';
 export type ImageModel = 'nano_banana' | 'imagen_2' | 'imagen_3';
 export type ChatModel = 'gemini_1.5_flash' | 'gemini_2.5_flash';
 
+// This new type represents the data returned from the joined query for chats and projects
+export interface ChatWithProjectData extends Chat {
+  projects: Project | null;
+}
+
 export interface Profile {
   id: string;
   roblox_id: string;

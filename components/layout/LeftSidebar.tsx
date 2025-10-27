@@ -1,11 +1,26 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Chat, Profile, WorkspaceMode, Project } from '../../types';
-import { Cog6ToothIcon, PencilIcon, PlusIcon, MagnifyingGlassIcon, ArrowLeftOnRectangleIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { Chat, Profile, WorkspaceMode, Project, ChatWithProjectData } from '../../types';
+import { Cog6ToothIcon, PencilIcon, PlusIcon, MagnifyingGlassIcon, ArrowLeftOnRectangleIcon, TrashIcon, ChevronDoubleLeftIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChatWithProjectData } from '../../services/databaseService';
+
+const SidebarToggleButton: React.FC<{
+  isCollapsed: boolean;
+  onToggle: () => void;
+}> = ({ isCollapsed, onToggle }) => {
+  return (
+    <motion.button
+      onClick={onToggle}
+      className="p-1.5 text-gray-400 rounded-md hover:bg-white/10 hover:text-white transition-colors"
+      title={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+      animate={{ rotate: isCollapsed ? 180 : 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <ChevronDoubleLeftIcon className="w-5 h-5" />
+    </motion.button>
+  );
+};
 
 const FALLBACK_AVATAR_SVG = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23334155'/%3E%3Cpath d='M50 42 C61.046 42 70 50.954 70 62 L30 62 C30 50.954 38.954 42 50 42 Z' fill='white'/%3E%3Ccircle cx='50' cy='30' r='10' fill='white'/%3E%3C/svg%3E`;
 
@@ -95,23 +110,18 @@ interface LeftSidebarProps {
     workspaceMode: WorkspaceMode;
     activeProject: Project | null;
     isAdmin?: boolean;
+    // New props for collapsible sidebar
+    isPersistent?: boolean;
+    isCollapsed?: boolean;
+    onToggleCollapse?: () => void;
 }
 
 export const LeftSidebar: React.FC<LeftSidebarProps> = ({ 
-    allChats,
-    activeChatId,
-    onSelectChat, 
-    onNewChatClick,
-    onUpdateChat,
-    onDeleteChat,
-    onSettingsClick,
-    onGoToHub,
-    onSignOut,
-    profile,
-    isMobileOpen,
-    onMobileClose,
-    workspaceMode,
-    activeProject
+    allChats, activeChatId, onSelectChat, onNewChatClick,
+    onUpdateChat, onDeleteChat, onSettingsClick, onGoToHub,
+    onSignOut, profile, isMobileOpen, onMobileClose,
+    workspaceMode, activeProject, isPersistent = false,
+    isCollapsed = false, onToggleCollapse = () => {}
 }) => {
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -152,6 +162,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     <span className="text-xl">🫧</span>
                     <h2 className="text-lg font-semibold text-white truncate">Bubble AI</h2>
                 </button>
+                {isPersistent && <SidebarToggleButton onToggle={onToggleCollapse} isCollapsed={isCollapsed} />}
             </div>
              <button
                 onClick={onNewChatClick}
@@ -224,7 +235,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
         ) : (
              <div className="px-3 text-sm text-center text-gray-500 mt-4">
                 {workspaceMode === 'cocreator' && !activeProject
-                    ? 'No autonomous chats found.'
+                    ? 'This user has no autonomous chats.'
                     : workspaceMode === 'cocreator'
                     ? 'No chats in this project yet.' 
                     : 'No conversations yet.'}
@@ -243,14 +254,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   return (
     <>
-        {/* Desktop Sidebar */}
-        <aside 
-            className="hidden md:flex flex-col bg-bg-secondary overflow-hidden w-72 p-2"
-        >
-            {sidebarContent}
-        </aside>
-
-        {/* Mobile Sidebar Overlay */}
+        {/* Overlay Sidebar (for Mobile and non-persistent modes) */}
         <AnimatePresence>
             {isMobileOpen && (
                 <>
@@ -260,7 +264,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.2 }}
                         onClick={onMobileClose}
-                        className="fixed inset-0 bg-black/60 z-40"
+                        className="fixed inset-0 bg-black/60 z-40 md:hidden"
                         aria-hidden="true"
                     />
                     <motion.aside
@@ -275,6 +279,13 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 </>
             )}
         </AnimatePresence>
+
+        {/* Persistent Desktop Sidebar */}
+        {isPersistent && !isCollapsed && (
+            <aside className="hidden md:flex w-72 flex-col bg-bg-secondary p-2 flex-shrink-0">
+                {sidebarContent}
+            </aside>
+        )}
     </>
   );
 };

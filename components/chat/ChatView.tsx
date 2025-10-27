@@ -1,12 +1,13 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Message, Project, Chat, WorkspaceMode } from '../../types';
+// FIX: Moved ChatWithProjectData import from databaseService to types.
+import { Message, Project, Chat, WorkspaceMode, ChatWithProjectData } from '../../types';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { InitialPromptView } from './InitialPromptView';
-import { ChatWithProjectData } from '../../services/databaseService';
 
 interface ChatViewProps {
   project: Project | null;
@@ -28,15 +29,15 @@ interface ChatViewProps {
 }
 
 const AutonomousInitialView: React.FC<{ onQuickStart: (prompt: string) => void }> = ({ onQuickStart }) => (
-    <div className="flex flex-col items-center justify-center h-full text-center px-4">
+    <div className="flex flex-col items-center justify-end h-full text-center px-4 pb-[45vh]">
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ type: 'spring', delay: 0.2, duration: 0.5 }}
             className="max-w-md"
         >
-            <h2 className="text-2xl font-bold text-white mb-2">Hey there! 👋</h2>
-            <p className="text-gray-400 mb-6">
+            <h2 className="text-2xl font-bold text-text-primary mb-2">Hey there! 👋</h2>
+            <p className="text-text-secondary mb-6">
                 I'm Bubble, your AI companion. How can I help you today?
             </p>
         </motion.div>
@@ -111,9 +112,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const isLoading = isLoadingHistory || isCreatingChat;
 
   return (
-    <div className="flex flex-col h-full bg-bg-primary">
-      <div className={`flex-1 overflow-y-auto flex flex-col ${isInitialView ? 'justify-center' : 'p-4'}`}>
-        <div className="w-full max-w-4xl flex-1 mx-auto">
+    <div className="flex flex-col h-full bg-bg-primary relative">
+      <div className={`flex-1 overflow-y-auto flex flex-col ${isInitialView ? '' : 'p-4'}`}>
+        <div className="w-full max-w-5xl flex-1 mx-auto">
             {isLoading && messages.length === 0 && (
                 <div className="flex items-center justify-center h-full">
                     <svg className="animate-spin h-8 w-8 text-primary-start" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -164,6 +165,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         workspaceMode={workspaceMode}
         isInitialView={isInitialView && !chat}
         loadingMessage={loadingMessage}
+        project={project}
       />
     </div>
   );

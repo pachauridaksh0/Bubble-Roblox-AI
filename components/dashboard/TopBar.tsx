@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { MagnifyingGlassIcon, XMarkIcon, Cog6ToothIcon, Bars3Icon, BuildingStorefrontIcon, ChatBubbleBottomCenterTextIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
@@ -133,7 +132,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   return (
     <header className="relative flex-shrink-0 h-16 flex items-center justify-between px-4 md:px-8 border-b border-border-color bg-bg-primary">
       <div className="flex items-center gap-2 md:gap-4 flex-shrink min-w-0">
-        <div className="md:hidden">
+        <div className={workspaceMode === 'autonomous' ? 'md:hidden' : ''}>
             <button onClick={onMobileMenuClick} className="p-1 text-gray-400 hover:text-white" aria-label="Open menu">
                 <Bars3Icon className="w-6 h-6" />
             </button>

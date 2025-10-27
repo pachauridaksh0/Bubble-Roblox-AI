@@ -1,21 +1,22 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { PaperAirplaneIcon, ChevronDownIcon, SparklesIcon, PlusIcon } from '@heroicons/react/24/solid';
-import { Chat, ChatMode, WorkspaceMode } from '../../types';
+import { Chat, ChatMode, WorkspaceMode, Project, ChatWithProjectData } from '../../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChatBubbleLeftEllipsisIcon, CpuChipIcon, PuzzlePieceIcon, AcademicCapIcon } from '@heroicons/react/24/solid';
 import { VoiceControls } from './VoiceControls';
-import { QuickActions } from '../features/QuickActions';
 
 interface ChatInputProps {
   onSendMessage: (text: string) => void;
   isLoading: boolean;
-  chat: Chat | null; // Can be null for new chat
+  chat: ChatWithProjectData | null; // Can be null for new chat
   onChatUpdate: ((updates: Partial<Chat>) => void) | null;
   isAdmin: boolean;
   workspaceMode: WorkspaceMode;
   isInitialView: boolean;
   loadingMessage: string;
+  project: Project | null;
 }
 
 const placeholders: Record<WorkspaceMode, string[]> = {
@@ -32,7 +33,7 @@ const placeholders: Record<WorkspaceMode, string[]> = {
   ],
 };
 
-export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, chat, onChatUpdate, isAdmin, workspaceMode, isInitialView, loadingMessage }) => {
+export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, chat, onChatUpdate, isAdmin, workspaceMode, isInitialView, loadingMessage, project }) => {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isModeSelectorOpen, setModeSelectorOpen] = useState(false);
@@ -104,17 +105,20 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
       modesToShow.push('pro_max');
   }
   
-  const containerClasses = `w-full ${isInitialView ? 'pb-8' : 'px-4 pb-4'}`;
-  const formWrapperClasses = `relative ${isInitialView ? 'max-w-xl' : 'max-w-4xl'} mx-auto`;
-  const formClasses = `relative bg-bg-tertiary border border-border-color rounded-2xl shadow-2xl flex items-end p-2 gap-2`;
+  const isFloating = isInitialView && !chat;
+
+  const containerClasses = isFloating
+    ? 'absolute bottom-[35vh] left-1/2 -translate-x-1/2 w-full max-w-2xl px-4'
+    : 'w-full px-4 pb-4';
+
+  const formWrapperClasses = isFloating
+    ? 'relative'
+    : 'relative max-w-4xl mx-auto';
+
+  const formClasses = `relative bg-bg-secondary border border-border-color rounded-3xl shadow-2xl flex items-end p-2 gap-2`;
 
   return (
     <div className={containerClasses}>
-        {isInitialView && workspaceMode === 'autonomous' && (
-          <div className="max-w-xl mx-auto mb-4">
-            <QuickActions onAction={(prompt) => onSendMessage(prompt)} />
-          </div>
-        )}
         <div className={formWrapperClasses}>
             <AnimatePresence>
                 {isLoading && (
@@ -124,7 +128,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
                     exit={{ opacity: 0 }}
                     className="absolute inset-0 bg-bg-tertiary/70 backdrop-blur-sm flex items-center justify-center rounded-2xl z-10"
                 >
-                    <div className="flex items-center gap-3 text-gray-300 font-medium">
+                    <div className="flex items-center gap-3 text-text-secondary font-medium">
                         <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                         <span>{loadingMessage}</span>
                     </div>
@@ -136,7 +140,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
             className={formClasses}
           >
             {/* Show selector ONLY in co-creator mode when a chat is active */}
-            {chat && onChatUpdate && workspaceMode === 'cocreator' && (
+            {(project || (chat && chat.projects)) && workspaceMode === 'cocreator' && (
                  <div ref={modeSelectorRef} className="relative flex-shrink-0">
                     <AnimatePresence>
                         {isModeSelectorOpen && (
@@ -150,12 +154,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
                                     <button
                                         key={modeId}
                                         onClick={() => handleModeChange(modeId as ChatMode)}
-                                        className="w-full flex items-start gap-3 p-2 text-left rounded-md hover:bg-white/5"
+                                        className="w-full flex items-start gap-3 p-2 text-left rounded-md hover:bg-interactive-hover"
                                     >
                                         {modeMap[modeId as ChatMode].icon}
                                         <div>
-                                            <p className="text-sm font-semibold text-white">{modeMap[modeId as ChatMode].name}</p>
-                                            <p className="text-xs text-gray-400">{modeMap[modeId as ChatMode].description}</p>
+                                            <p className="text-sm font-semibold text-text-primary">{modeMap[modeId as ChatMode].name}</p>
+                                            <p className="text-xs text-text-secondary">{modeMap[modeId as ChatMode].description}</p>
                                         </div>
                                     </button>
                                 ))}
@@ -166,24 +170,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
                     <button 
                         type="button" 
                         onClick={() => setModeSelectorOpen(prev => !prev)} 
-                        className="flex items-center gap-1 p-2 rounded-lg hover:bg-black/20 transition-colors"
+                        className="flex items-center gap-1 p-2 rounded-lg hover:bg-interactive-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         title={`Current agent: ${currentModeDetails.name}`}
+                        disabled={!chat}
                     >
                         {currentModeDetails.icon}
-                        <ChevronDownIcon className="w-4 h-4 text-gray-400" />
+                        <ChevronDownIcon className="w-4 h-4 text-text-secondary" />
                     </button>
                  </div>
             )}
             
             {/* Placeholder to align items correctly when selector is hidden */}
-            {!chat && workspaceMode === 'cocreator' && <div className="flex-shrink-0 w-8 h-8"></div>}
+            {!( (project || (chat && chat.projects)) && workspaceMode === 'cocreator' ) && <div className="flex-shrink-0 w-8 h-8 md:hidden"></div>}
 
              <button
                 type="button"
-                className="flex-shrink-0 w-8 h-8 rounded-full bg-black/20 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                className="flex-shrink-0 w-10 h-10 rounded-full bg-black/20 flex items-center justify-center text-text-secondary hover:text-text-primary transition-colors"
                 aria-label="Add file"
             >
-                <PlusIcon className="w-5 h-5" />
+                <PlusIcon className="w-6 h-6" />
             </button>
             <textarea
               ref={textareaRef}
@@ -191,7 +196,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              className="flex-1 bg-transparent text-gray-200 placeholder-gray-400 focus:outline-none resize-none px-2 py-2.5 max-h-48"
+              className="flex-1 bg-transparent text-text-primary placeholder-text-secondary focus:outline-none resize-none px-2 py-2.5 max-h-48"
               rows={1}
               disabled={isLoading}
               aria-label="Chat message input"
@@ -201,7 +206,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
                 <button
                     type="submit"
                     disabled={isLoading || !text.trim()}
-                    className="flex-shrink-0 w-8 h-8 rounded-full bg-black/20 flex items-center justify-center text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:bg-black/40"
+                    className="flex-shrink-0 w-10 h-10 rounded-full bg-black/20 flex items-center justify-center text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:bg-black/40"
                     aria-label="Send message"
                 >
                     <PaperAirplaneIcon className="w-5 h-5" />
