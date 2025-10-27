@@ -29,7 +29,7 @@ interface ChatViewProps {
 }
 
 const AutonomousInitialView: React.FC<{ onQuickStart: (prompt: string) => void }> = ({ onQuickStart }) => (
-    <div className="flex flex-col items-center justify-end h-full text-center px-4 pb-[45vh]">
+    <div className="flex flex-col items-center justify-end h-full text-center px-4 pb-[40vh]">
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

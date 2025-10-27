@@ -13,6 +13,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { generateProjectDetails, classifyUserIntent } from '../../services/geminiService';
 import { useToast } from '../../hooks/useToast';
 import { useChat } from '../../hooks/useChat';
+import { useWindowSize } from '../../hooks/useWindowSize';
 
 // New Community Page Placeholders
 import { MarketplacePage } from '../community/MarketplacePage';
@@ -33,11 +34,16 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
   const [view, setView] = useState<View>('chat');
   const [workspaceMode, setWorkspaceMode] = useLocalStorage<WorkspaceMode>('workspaceMode', 'cocreator');
   const [hubView, setHubView] = useState<HubView>('projects');
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<number[]>([]);
   const [currentSearchResultIndex, setCurrentSearchResultIndex] = useState(-1);
+
+  // NEW state management for sidebar
+  const { width } = useWindowSize();
+  const isMobile = width ? width < 768 : false; // md breakpoint
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useLocalStorage('userSidebarCollapsed', false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const {
       allChats,
@@ -136,6 +142,15 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
         addToast('Failed to create a new chat in this project.', 'error');
     } finally {
         setIsCreatingChat(false);
+    }
+  };
+
+  const handleHamburgerClick = () => {
+    const isPersistentNonMobile = workspaceMode === 'autonomous' && !isMobile;
+    if (isPersistentNonMobile) {
+        setIsSidebarCollapsed(false);
+    } else {
+        setIsMobileSidebarOpen(true);
     }
   };
 
@@ -373,6 +388,9 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
           workspaceMode={workspaceMode}
           isAdmin={isAdmin}
           activeProject={activeProject}
+          isPersistent={workspaceMode === 'autonomous' && !isMobile}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
         />
         <div className="flex-1 flex flex-col overflow-hidden">
           <TopBar
@@ -386,7 +404,8 @@ export const Layout: React.FC<LayoutProps> = ({ geminiApiKey }) => {
             workspaceMode={workspaceMode}
             onWorkspaceModeChange={(mode) => setWorkspaceMode(mode)}
             isProjectView={!!activeProject}
-            onMobileMenuClick={() => setIsMobileSidebarOpen(true)}
+            onHamburgerClick={handleHamburgerClick}
+            showHamburger={isMobile || workspaceMode === 'cocreator' || (workspaceMode === 'autonomous' && isSidebarCollapsed)}
             isThinking={isThinking}
             onSwitchToAutonomous={handleNewChat}
             onSwitchToCocreator={handleGoToHub}

@@ -108,7 +108,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
   const isFloating = isInitialView && !chat;
 
   const containerClasses = isFloating
-    ? 'absolute bottom-[35vh] left-1/2 -translate-x-1/2 w-full max-w-2xl px-4'
+    ? 'absolute bottom-[30vh] left-1/2 -translate-x-1/2 w-full max-w-2xl px-4'
     : 'w-full px-4 pb-4';
 
   const formWrapperClasses = isFloating
@@ -139,8 +139,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
             onSubmit={handleSubmit}
             className={formClasses}
           >
-            {/* Show selector ONLY in co-creator mode when a chat is active */}
-            {(project || (chat && chat.projects)) && workspaceMode === 'cocreator' && (
+            {/* Show selector ONLY in co-creator mode when inside a project */}
+            {project && workspaceMode === 'cocreator' && (
                  <div ref={modeSelectorRef} className="relative flex-shrink-0">
                     <AnimatePresence>
                         {isModeSelectorOpen && (
@@ -181,7 +181,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage, isLoading, 
             )}
             
             {/* Placeholder to align items correctly when selector is hidden */}
-            {!( (project || (chat && chat.projects)) && workspaceMode === 'cocreator' ) && <div className="flex-shrink-0 w-8 h-8 md:hidden"></div>}
+            {!(project && workspaceMode === 'cocreator') && <div className="flex-shrink-0 w-8 h-8 md:hidden"></div>}
 
              <button
                 type="button"
